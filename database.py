@@ -22,6 +22,8 @@ class DatabaseManager:
         self.cards: Optional[AsyncIOMotorCollection] = None
         self.transactions: Optional[AsyncIOMotorCollection] = None
         self.blacklist: Optional[AsyncIOMotorCollection] = None
+        self.countries: Optional[AsyncIOMotorCollection] = None
+        self.orders: Optional[AsyncIOMotorCollection] = None
     
     async def connect(self, mongodb_url: str = None):
         """Connect to MongoDB database"""
@@ -37,6 +39,8 @@ class DatabaseManager:
             self.cards = self.db.cards
             self.transactions = self.db.transactions
             self.blacklist = self.db.blacklist
+            self.countries = self.db.countries
+            self.orders = self.db.orders
             
             # Test connection
             await self.client.admin.command('ping')
@@ -203,6 +207,82 @@ class DatabaseManager:
             return result.deleted_count > 0
         except Exception as e:
             logger.error(f"Error removing user {user_id} from blacklist: {e}")
+            return False
+    
+    # Countries operations
+    async def get_available_countries(self) -> List[Dict[str, Any]]:
+        """Get all available countries"""
+        try:
+            countries = await self.countries.find({"is_active": True}).sort("name", 1).to_list(length=None)
+            return countries
+        except Exception as e:
+            logger.error(f"Error getting available countries: {e}")
+            return []
+    
+    async def get_cards_by_country(self, country_code: str) -> List[Dict[str, Any]]:
+        """Get available cards for a specific country"""
+        try:
+            cards = await self.cards.find({
+                "country_code": country_code,
+                "is_available": True
+            }).to_list(length=None)
+            return cards
+        except Exception as e:
+            logger.error(f"Error getting cards for country {country_code}: {e}")
+            return []
+    
+    # Orders operations
+    async def create_order(self, user_id: int, card_id: str, country_code: str, amount: float) -> Optional[str]:
+        """Create a new order"""
+        try:
+            from bson import ObjectId
+            order_id = str(ObjectId())
+            
+            order_data = {
+                "_id": ObjectId(order_id),
+                "order_id": order_id,
+                "user_id": user_id,
+                "card_id": card_id,
+                "country_code": country_code,
+                "amount": amount,
+                "status": "pending",  # pending, confirmed, completed, cancelled
+                "created_at": datetime.utcnow(),
+                "updated_at": datetime.utcnow()
+            }
+            
+            await self.orders.insert_one(order_data)
+            logger.info(f"Created order {order_id} for user {user_id}")
+            return order_id
+        except Exception as e:
+            logger.error(f"Error creating order: {e}")
+            return None
+    
+    async def get_order(self, order_id: str) -> Optional[Dict[str, Any]]:
+        """Get order by ID"""
+        try:
+            from bson import ObjectId
+            order = await self.orders.find_one({"_id": ObjectId(order_id)})
+            return order
+        except Exception as e:
+            logger.error(f"Error getting order {order_id}: {e}")
+            return None
+    
+    async def update_order_status(self, order_id: str, status: str) -> bool:
+        """Update order status"""
+        try:
+            from bson import ObjectId
+            result = await self.orders.update_one(
+                {"_id": ObjectId(order_id)},
+                {
+                    "$set": {
+                        "status": status,
+                        "updated_at": datetime.utcnow()
+                    }
+                }
+            )
+            return result.modified_count > 0
+        except Exception as e:
+            logger.error(f"Error updating order {order_id}: {e}")
             return False
 
 # Global database instance

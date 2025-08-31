@@ -40,6 +40,9 @@ mongo-restore:
 	docker cp ./backup telegram-bot-mongodb:/tmp/backup
 	docker exec telegram-bot-mongodb mongorestore --username admin --password password123 --authenticationDatabase admin /tmp/backup
 
+mongo-resync:
+	docker-compose exec mongodb mongosh --username admin --password password123 --authenticationDatabase admin telegram_bot --file /docker-entrypoint-initdb.d/init-mongo.js
+
 # Development with Docker
 dev-up:
 	cp env.example .env

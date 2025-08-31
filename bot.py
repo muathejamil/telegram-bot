@@ -1,5 +1,6 @@
 import os
 import logging
+from datetime import datetime
 from telegram import ForceReply, Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters, CallbackQueryHandler
 from dotenv import load_dotenv
@@ -105,22 +106,30 @@ Itunes gift card (بطاقة إيتونس)
         await query.edit_message_text(text=deposit_text, reply_markup=reply_markup)
         
     elif query.data == 'cardlist':
-        cards = await db_manager.get_available_cards()
+        # Show available countries
+        countries = await db_manager.get_available_countries()
         
-        keyboard = [[InlineKeyboardButton("🔙 العودة للقائمة الرئيسية", callback_data='start')]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        if cards:
-            cards_text = "🚒 قائمة البطاقات المتاحة:\n\n"
-            for card in cards[:10]:  # Show first 10 cards
-                cards_text += f"🏷️ {card['card_id']} - {card['card_type']} - ${card['value']}\n"
+        if countries:
+            keyboard = []
+            for country in countries:
+                keyboard.append([InlineKeyboardButton(
+                    f"{country.get('flag', '🌍')} {country['name']}", 
+                    callback_data=f"country_{country['code']}"
+                )])
+            keyboard.append([InlineKeyboardButton("🔙 العودة للقائمة الرئيسية", callback_data='start')])
+            reply_markup = InlineKeyboardMarkup(keyboard)
             
-            if len(cards) > 10:
-                cards_text += f"\n... و {len(cards) - 10} بطاقة أخرى"
+            await query.edit_message_text(
+                text="🌍 اختر الدولة التي تريد شراء بطاقات لها:",
+                reply_markup=reply_markup
+            )
         else:
-            cards_text = "😔 لا توجد بطاقات متاحة حالياً"
-            
-        await query.edit_message_text(text=cards_text, reply_markup=reply_markup)
+            keyboard = [[InlineKeyboardButton("🔙 العودة للقائمة الرئيسية", callback_data='start')]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await query.edit_message_text(
+                text="😔 لا توجد دول متاحة حالياً",
+                reply_markup=reply_markup
+            )
         
     elif query.data == 'howtouse':
         keyboard = [[InlineKeyboardButton("🔙 العودة للقائمة الرئيسية", callback_data='start')]]
@@ -174,6 +183,217 @@ Itunes gift card (بطاقة إيتونس)
 
         """
         await query.edit_message_text(text=blacklist_text, reply_markup=reply_markup)
+    
+    # Handle country selection
+    elif query.data.startswith('country_'):
+        country_code = query.data.split('_')[1]
+        cards = await db_manager.get_cards_by_country(country_code)
+        
+        if cards:
+            keyboard = []
+            for card in cards:
+                card_text = f"{card['card_type']} بـ{card['price']} USDT"
+                keyboard.append([InlineKeyboardButton(
+                    card_text,
+                    callback_data=f"card_{card['card_id']}"
+                )])
+            
+            keyboard.append([InlineKeyboardButton("🔙 العودة لقائمة الدول", callback_data='cardlist')])
+            keyboard.append([InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data='start')])
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            # Get country name for display
+            countries = await db_manager.get_available_countries()
+            country_name = next((c['name'] for c in countries if c['code'] == country_code), country_code)
+            
+            await query.edit_message_text(
+                text=f"🏷️ البطاقات المتاحة في {country_name}:\n\nاختر البطاقة التي تريد شراءها:",
+                reply_markup=reply_markup
+            )
+        else:
+            keyboard = [
+                [InlineKeyboardButton("🔙 العودة لقائمة الدول", callback_data='cardlist')],
+                [InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data='start')]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await query.edit_message_text(
+                text="😔 لا توجد بطاقات متاحة لهذه الدولة حالياً",
+                reply_markup=reply_markup
+            )
+    
+    # Handle card selection
+    elif query.data.startswith('card_'):
+        card_id = query.data.split('_')[1]
+        card = await db_manager.get_card(card_id)
+        
+        if card and card.get('is_available', False):
+            # Check user balance
+            user_balance = await db_manager.get_user_balance(user.id)
+            
+            if user_balance >= card['price']:
+                keyboard = [
+                    [InlineKeyboardButton("✅ نعم، أريد الشراء", callback_data=f"confirm_{card_id}")],
+                    [InlineKeyboardButton("❌ لا، إلغاء", callback_data=f"country_{card['country_code']}")],
+                    [InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data='start')]
+                ]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                
+                confirmation_text = f"""
+🛒 تأكيد الطلب
+
+📋 تفاصيل البطاقة:
+🏷️ النوع: {card['card_type']}
+🌍 الدولة: {card.get('country_name', 'غير محدد')}
+💰 السعر: {card['price']} USDT
+💳 رصيدك الحالي: {user_balance:.2f} USDT
+
+❓ هل أنت متأكد من أنك تريد شراء هذه البطاقة؟
+                """
+                
+                await query.edit_message_text(text=confirmation_text, reply_markup=reply_markup)
+            else:
+                keyboard = [
+                    [InlineKeyboardButton("💸 إيداع USDT", callback_data='depositusdt')],
+                    [InlineKeyboardButton("🔙 العودة للبطاقات", callback_data=f"country_{card['country_code']}")],
+                    [InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data='start')]
+                ]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                
+                insufficient_text = f"""
+⚠️ رصيد غير كافي
+
+💰 سعر البطاقة: {card['price']} USDT
+💳 رصيدك الحالي: {user_balance:.2f} USDT
+📉 تحتاج إلى: {card['price'] - user_balance:.2f} USDT إضافية
+
+يرجى إيداع المبلغ المطلوب أولاً.
+                """
+                
+                await query.edit_message_text(text=insufficient_text, reply_markup=reply_markup)
+        else:
+            keyboard = [
+                [InlineKeyboardButton("🔙 العودة لقائمة الدول", callback_data='cardlist')],
+                [InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data='start')]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await query.edit_message_text(
+                text="😔 رصيدك غير كافي",
+                reply_markup=reply_markup
+            )
+    
+    # Handle order confirmation
+    elif query.data.startswith('confirm_'):
+        card_id = query.data.split('_')[1]
+        card = await db_manager.get_card(card_id)
+        
+        if card and card.get('is_available', False):
+            # Check balance again
+            user_balance = await db_manager.get_user_balance(user.id)
+            
+            if user_balance >= card['price']:
+                # Create order
+                order_id = await db_manager.create_order(
+                    user_id=user.id,
+                    card_id=card_id,
+                    country_code=card['country_code'],
+                    amount=card['price']
+                )
+                
+                if order_id:
+                    # Deduct balance
+                    await db_manager.update_user_balance(user.id, -card['price'])
+                    
+                    # Reserve the card
+                    await db_manager.reserve_card(card_id, user.id)
+                    
+                    # Create transaction record
+                    await db_manager.create_transaction(
+                        user_id=user.id,
+                        transaction_type='card_purchase',
+                        amount=card['price'],
+                        description=f"شراء بطاقة {card['card_type']}"
+                    )
+                    
+                    # Send notification to admin
+                    await send_admin_notification(context, user, card, order_id)
+                    
+                    keyboard = [[InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data='start')]]
+                    reply_markup = InlineKeyboardMarkup(keyboard)
+                    
+                    success_text = f"""
+✅ تم إنشاء الطلب بنجاح!
+
+🆔 رقم الطلب: {order_id}
+🏷️ نوع البطاقة: {card['card_type']}
+💰 المبلغ المدفوع: {card['price']} USDT
+
+📨 تم إرسال إشعار للإدارة وسيتم إرسال تفاصيل البطاقة قريباً.
+
+⏰ وقت التسليم المتوقع: 5-30 دقيقة
+                    """
+                    
+                    await query.edit_message_text(text=success_text, reply_markup=reply_markup)
+                else:
+                    keyboard = [[InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data='start')]]
+                    reply_markup = InlineKeyboardMarkup(keyboard)
+                    await query.edit_message_text(
+                        text="❌ حدث خطأ في إنشاء الطلب. يرجى المحاولة مرة أخرى.",
+                        reply_markup=reply_markup
+                    )
+            else:
+                keyboard = [
+                    [InlineKeyboardButton("💸 إيداع USDT", callback_data='depositusdt')],
+                    [InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data='start')]
+                ]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                await query.edit_message_text(
+                    text="⚠️ رصيدك غير كافي لإتمام هذا الطلب.",
+                    reply_markup=reply_markup
+                )
+        else:
+            keyboard = [[InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data='start')]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await query.edit_message_text(
+                text="😔 هذه البطاقة لم تعد متاحة.",
+                reply_markup=reply_markup
+            )
+
+async def send_admin_notification(context: ContextTypes.DEFAULT_TYPE, user, card, order_id):
+    """Send notification to admin about new order"""
+    try:
+        admin_id = os.getenv('ADMIN_USER_ID')
+        if not admin_id:
+            logging.warning("ADMIN_USER_ID not set in environment variables")
+            return
+        
+        admin_id = int(admin_id)
+        
+        notification_text = f"""
+🔔 طلب جديد!
+
+👤 معلومات المستخدم:
+🆔 ID: {user.id}
+👤 الاسم: {user.first_name or 'غير محدد'}
+📧 اسم المستخدم: @{user.username or 'غير محدد'}
+
+🛒 تفاصيل الطلب:
+🆔 رقم الطلب: {order_id}
+🏷️ نوع البطاقة: {card['card_type']}
+🌍 الدولة: {card.get('country_name', 'غير محدد')}
+💰 المبلغ: {card['price']} USDT
+
+⏰ وقت الطلب: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+
+يرجى إرسال تفاصيل البطاقة للمستخدم.
+        """
+        
+        await context.bot.send_message(
+            chat_id=admin_id,
+            text=notification_text
+        )
+        
+    except Exception as e:
+        logging.error(f"Error sending admin notification: {e}")
 
 async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Echo the user message."""
