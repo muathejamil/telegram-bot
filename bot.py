@@ -93,9 +93,14 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 1️⃣ أرسل المبلغ المطلوب إيداعه إلى العنوان التالي:
 📧 العنوان: {os.getenv('BINANCE_WALLET_TOKEN')}
 
+ID BINANCE: {os.getenv('BINANCE_WALLET_ID')}
+
+Binance gift card (بطاقة بايننس)
+Itunes gift card (بطاقة إيتونس)
+
 2️⃣ أرسل صورة من إيصال التحويل مع معرف المستخدم الخاص بك
 
-3️⃣ انتظر التأكيد من الإدارة (عادة خلال 24 ساعة)
+3️⃣ انتظر التأكيد من الإدارة (عادة خلال 1 ساعة)
         """
         await query.edit_message_text(text=deposit_text, reply_markup=reply_markup)
         
