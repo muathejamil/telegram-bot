@@ -517,7 +517,316 @@ async def order_button_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         else:
             keyboard = [[InlineKeyboardButton("🔙 العودة لإدارة البطاقات", callback_data='manage_cards')]]
             reply_markup = InlineKeyboardMarkup(keyboard)
-            await safe_edit_message(query, "✅ لا توجد بطاقات محذوفة للاستعادة", reply_markup)
+            await safe_edit_message(query, "✅ لا توجد بطاقات محذوفة للاستعادة", reply_markup        )
+    
+    # Handle user management
+    elif query.data == 'manage_users':
+        keyboard = [
+            [InlineKeyboardButton("📋 عرض المستخدمين", callback_data='list_users')],
+            [InlineKeyboardButton("💰 شحن رصيد", callback_data='charge_balance')],
+            [InlineKeyboardButton("🚫 حظر/إلغاء حظر", callback_data='block_users')],
+            [InlineKeyboardButton("📊 إحصائيات المستخدمين", callback_data='user_stats')],
+            [InlineKeyboardButton("🔙 العودة للقائمة الرئيسية", callback_data='start')]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await safe_edit_message(
+            query,
+            "👥 إدارة المستخدمين\n\nاختر العملية المطلوبة:",
+            reply_markup
+        )
+    
+    elif query.data == 'list_users':
+        # Show users list
+        users = await get_all_users_for_admin()
+        if users:
+            keyboard = []
+            users_text = "👥 قائمة المستخدمين:\n\n"
+            
+            for i, user in enumerate(users[:15], 1):  # Show first 15 users
+                username = user.get('username', 'غير محدد')
+                first_name = user.get('first_name', 'غير محدد')
+                balance = user.get('balance', 0.0)
+                is_blocked = await db_manager.is_blacklisted(user['user_id'])
+                
+                status_icon = "🚫" if is_blocked else "👤"
+                users_text += f"{i}. {status_icon} {first_name} (@{username}) | ${balance:.2f}\n"
+                
+                # Add button for each user
+                keyboard.append([InlineKeyboardButton(
+                    f"{status_icon} {first_name} (@{username})",
+                    callback_data=f"user_{user['user_id']}"
+                )])
+            
+            keyboard.append([InlineKeyboardButton("🔄 تحديث القائمة", callback_data='list_users')])
+            keyboard.append([InlineKeyboardButton("🔙 العودة لإدارة المستخدمين", callback_data='manage_users')])
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await safe_edit_message(query, users_text, reply_markup)
+        else:
+            keyboard = [
+                [InlineKeyboardButton("🔄 تحديث القائمة", callback_data='list_users')],
+                [InlineKeyboardButton("🔙 العودة لإدارة المستخدمين", callback_data='manage_users')]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await safe_edit_message(query, "📭 لا يوجد مستخدمون مسجلون حالياً", reply_markup)
+    
+    elif query.data == 'charge_balance':
+        # Show users for balance charging
+        users = await get_all_users_for_admin()
+        if users:
+            keyboard = []
+            for user in users[:20]:  # Show first 20 users
+                username = user.get('username', 'غير محدد')
+                first_name = user.get('first_name', 'غير محدد')
+                balance = user.get('balance', 0.0)
+                is_blocked = await db_manager.is_blacklisted(user['user_id'])
+                
+                if not is_blocked:  # Only show non-blocked users
+                    user_text = f"💰 {first_name} (@{username}) - ${balance:.2f}"
+                    keyboard.append([InlineKeyboardButton(
+                        user_text,
+                        callback_data=f"charge_user_{user['user_id']}"
+                    )])
+            
+            if keyboard:
+                keyboard.append([InlineKeyboardButton("🔙 العودة لإدارة المستخدمين", callback_data='manage_users')])
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                await safe_edit_message(
+                    query,
+                    "💰 شحن رصيد المستخدمين\n\nاختر المستخدم لشحن رصيده:",
+                    reply_markup
+                )
+            else:
+                keyboard = [[InlineKeyboardButton("🔙 العودة لإدارة المستخدمين", callback_data='manage_users')]]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                await safe_edit_message(query, "❌ لا يوجد مستخدمون نشطون لشحن رصيدهم", reply_markup)
+        else:
+            keyboard = [[InlineKeyboardButton("🔙 العودة لإدارة المستخدمين", callback_data='manage_users')]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await safe_edit_message(query, "📭 لا يوجد مستخدمون مسجلون", reply_markup)
+    
+    elif query.data == 'block_users':
+        # Show users for blocking/unblocking
+        users = await get_all_users_for_admin()
+        if users:
+            keyboard = []
+            for user in users[:20]:  # Show first 20 users
+                username = user.get('username', 'غير محدد')
+                first_name = user.get('first_name', 'غير محدد')
+                is_blocked = await db_manager.is_blacklisted(user['user_id'])
+                
+                status_icon = "🚫" if is_blocked else "👤"
+                action_text = "إلغاء حظر" if is_blocked else "حظر"
+                user_text = f"{status_icon} {first_name} (@{username}) - {action_text}"
+                
+                keyboard.append([InlineKeyboardButton(
+                    user_text,
+                    callback_data=f"toggle_block_{user['user_id']}"
+                )])
+            
+            keyboard.append([InlineKeyboardButton("🔙 العودة لإدارة المستخدمين", callback_data='manage_users')])
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await safe_edit_message(
+                query,
+                "🚫 حظر/إلغاء حظر المستخدمين\n\nاختر المستخدم لتغيير حالة الحظر:",
+                reply_markup
+            )
+        else:
+            keyboard = [[InlineKeyboardButton("🔙 العودة لإدارة المستخدمين", callback_data='manage_users')]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await safe_edit_message(query, "📭 لا يوجد مستخدمون مسجلون", reply_markup)
+    
+    elif query.data == 'user_stats':
+        # Show user statistics
+        stats = await get_user_statistics()
+        stats_text = f"""
+📊 إحصائيات المستخدمين
+
+👥 إجمالي المستخدمين: {stats['total_users']}
+✅ المستخدمون النشطون: {stats['active_users']}
+🚫 المستخدمون المحظورون: {stats['blocked_users']}
+💰 إجمالي الأرصدة: ${stats['total_balance']:.2f}
+📋 إجمالي الطلبات: {stats['total_orders']}
+💵 إجمالي المبيعات: ${stats['total_sales']:.2f}
+
+📅 آخر تحديث: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+        """
+        
+        keyboard = [
+            [InlineKeyboardButton("🔄 تحديث الإحصائيات", callback_data='user_stats')],
+            [InlineKeyboardButton("🔙 العودة لإدارة المستخدمين", callback_data='manage_users')]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await safe_edit_message(query, stats_text, reply_markup)
+    
+    # Handle individual user actions
+    elif query.data.startswith('user_'):
+        user_id = int(query.data[5:])  # Remove 'user_' prefix
+        user_info = await db_manager.get_user(user_id)
+        
+        if user_info:
+            is_blocked = await db_manager.is_blacklisted(user_id)
+            username = user_info.get('username', 'غير محدد')
+            first_name = user_info.get('first_name', 'غير محدد')
+            last_name = user_info.get('last_name', 'غير محدد')
+            balance = user_info.get('balance', 0.0)
+            created_at = user_info.get('created_at', datetime.utcnow())
+            
+            if isinstance(created_at, datetime):
+                created_str = created_at.strftime('%Y-%m-%d %H:%M:%S')
+            else:
+                created_str = 'غير محدد'
+            
+            status = "🚫 محظور" if is_blocked else "✅ نشط"
+            
+            user_details = f"""
+👤 تفاصيل المستخدم
+
+🆔 المعرف: {user_id}
+👤 الاسم: {first_name} {last_name}
+📱 اسم المستخدم: @{username}
+💰 الرصيد: ${balance:.2f}
+📊 الحالة: {status}
+📅 تاريخ التسجيل: {created_str}
+
+⚡ الإجراءات المتاحة:
+            """
+            
+            keyboard = [
+                [InlineKeyboardButton("💰 شحن رصيد", callback_data=f"charge_user_{user_id}")],
+                [InlineKeyboardButton("🚫 حظر/إلغاء حظر", callback_data=f"toggle_block_{user_id}")],
+                [InlineKeyboardButton("📋 عرض الطلبات", callback_data=f"user_orders_{user_id}")],
+                [InlineKeyboardButton("💳 عرض المعاملات", callback_data=f"user_transactions_{user_id}")],
+                [InlineKeyboardButton("🔙 العودة لقائمة المستخدمين", callback_data='list_users')]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await safe_edit_message(query, user_details, reply_markup)
+        else:
+            keyboard = [[InlineKeyboardButton("🔙 العودة لقائمة المستخدمين", callback_data='list_users')]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await safe_edit_message(query, f"❌ لم يتم العثور على المستخدم #{user_id}", reply_markup)
+    
+    # Handle balance charging
+    elif query.data.startswith('charge_user_'):
+        user_id = int(query.data[12:])  # Remove 'charge_user_' prefix
+        context.user_data['charging_user'] = user_id
+        
+        user_info = await db_manager.get_user(user_id)
+        if user_info:
+            username = user_info.get('username', 'غير محدد')
+            first_name = user_info.get('first_name', 'غير محدد')
+            current_balance = user_info.get('balance', 0.0)
+            
+            keyboard = [[InlineKeyboardButton("❌ إلغاء", callback_data=f'user_{user_id}')]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await safe_edit_message(
+                query,
+                f"💰 شحن رصيد المستخدم\n\n👤 المستخدم: {first_name} (@{username})\n💰 الرصيد الحالي: ${current_balance:.2f}\n\n💵 أدخل المبلغ المراد شحنه (مثال: 25.50):",
+                reply_markup
+            )
+        else:
+            keyboard = [[InlineKeyboardButton("🔙 العودة لشحن الرصيد", callback_data='charge_balance')]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await safe_edit_message(query, f"❌ لم يتم العثور على المستخدم #{user_id}", reply_markup)
+    
+    # Handle user blocking/unblocking
+    elif query.data.startswith('toggle_block_'):
+        user_id = int(query.data[13:])  # Remove 'toggle_block_' prefix
+        user_info = await db_manager.get_user(user_id)
+        
+        if user_info:
+            is_blocked = await db_manager.is_blacklisted(user_id)
+            username = user_info.get('username', 'غير محدد')
+            first_name = user_info.get('first_name', 'غير محدد')
+            
+            action = "إلغاء حظر" if is_blocked else "حظر"
+            action_verb = "إلغاء حظر" if is_blocked else "حظر"
+            
+            keyboard = [
+                [InlineKeyboardButton(f"✅ نعم، {action_verb} المستخدم", callback_data=f"confirm_block_{user_id}_{not is_blocked}")],
+                [InlineKeyboardButton("❌ إلغاء", callback_data=f"user_{user_id}")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await safe_edit_message(
+                query,
+                f"⚠️ تأكيد {action} المستخدم\n\n👤 المستخدم: {first_name} (@{username})\n\nهل أنت متأكد من {action} هذا المستخدم؟",
+                reply_markup
+            )
+        else:
+            keyboard = [[InlineKeyboardButton("🔙 العودة لحظر المستخدمين", callback_data='block_users')]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await safe_edit_message(query, f"❌ لم يتم العثور على المستخدم #{user_id}", reply_markup)
+    
+    elif query.data.startswith('confirm_block_'):
+        parts = query.data.split('_')
+        user_id = int(parts[2])
+        should_block = parts[3] == 'True'
+        
+        success = await toggle_user_block_status(user_id, should_block)
+        
+        if success:
+            action = "حظر" if should_block else "إلغاء حظر"
+            keyboard = [[InlineKeyboardButton("🔙 العودة لحظر المستخدمين", callback_data='block_users')]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await safe_edit_message(
+                query,
+                f"✅ تم {action} المستخدم بنجاح!\n\n📧 تم إشعار المستخدم بالتغيير.",
+                reply_markup
+            )
+        else:
+            keyboard = [[InlineKeyboardButton("🔙 العودة لحظر المستخدمين", callback_data='block_users')]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await safe_edit_message(query, f"❌ فشل في تغيير حالة المستخدم #{user_id}", reply_markup)
+    
+    # Handle user orders view
+    elif query.data.startswith('user_orders_'):
+        user_id = int(query.data[12:])  # Remove 'user_orders_' prefix
+        orders = await get_user_orders(user_id)
+        
+        if orders:
+            orders_text = f"📋 طلبات المستخدم #{user_id}:\n\n"
+            for i, order in enumerate(orders[:10], 1):
+                status_icon = {"pending": "⏳", "completed": "✅", "cancelled": "❌"}.get(order['status'], "❓")
+                orders_text += f"{i}. {status_icon} #{order['order_id'][:8]} - ${order['amount']:.2f}\n"
+            
+            keyboard = [[InlineKeyboardButton("🔙 العودة لتفاصيل المستخدم", callback_data=f'user_{user_id}')]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await safe_edit_message(query, orders_text, reply_markup)
+        else:
+            keyboard = [[InlineKeyboardButton("🔙 العودة لتفاصيل المستخدم", callback_data=f'user_{user_id}')]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await safe_edit_message(query, f"📭 لا توجد طلبات للمستخدم #{user_id}", reply_markup)
+    
+    elif query.data.startswith('user_transactions_'):
+        user_id = int(query.data[18:])  # Remove 'user_transactions_' prefix
+        transactions = await db_manager.get_user_transactions(user_id, 10)
+        
+        if transactions:
+            trans_text = f"💳 معاملات المستخدم #{user_id}:\n\n"
+            for i, trans in enumerate(transactions, 1):
+                trans_type = trans.get('type', 'غير محدد')
+                amount = trans.get('amount', 0.0)
+                description = trans.get('description', 'غير محدد')
+                created_at = trans.get('created_at', datetime.utcnow())
+                
+                if isinstance(created_at, datetime):
+                    date_str = created_at.strftime('%m-%d %H:%M')
+                else:
+                    date_str = 'غير محدد'
+                
+                trans_text += f"{i}. {trans_type} - ${amount:.2f} | {date_str}\n   {description}\n\n"
+            
+            keyboard = [[InlineKeyboardButton("🔙 العودة لتفاصيل المستخدم", callback_data=f'user_{user_id}')]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await safe_edit_message(query, trans_text, reply_markup)
+        else:
+            keyboard = [[InlineKeyboardButton("🔙 العودة لتفاصيل المستخدم", callback_data=f'user_{user_id}')]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await safe_edit_message(query, f"💳 لا توجد معاملات للمستخدم #{user_id}", reply_markup)
     
     # Handle country selection for card addition
     elif query.data.startswith('country_select_'):
@@ -771,6 +1080,11 @@ async def handle_card_addition_text(update: Update, context: ContextTypes.DEFAUL
         await handle_card_editing(update, context)
         return
     
+    # Handle balance charging
+    if context.user_data.get('charging_user'):
+        await handle_balance_charging(update, context)
+        return
+    
     # Check if we're adding a card
     if not context.user_data.get('adding_card'):
         return
@@ -942,6 +1256,62 @@ async def handle_card_editing(update: Update, context: ContextTypes.DEFAULT_TYPE
         context.user_data.pop('editing_card', None)
         context.user_data.pop('edit_field', None)
         await update.message.reply_text("❌ حدث خطأ في تحديث البطاقة")
+
+
+async def handle_balance_charging(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle balance charging text input"""
+    try:
+        user_id = context.user_data['charging_user']
+        text = update.message.text
+        
+        try:
+            amount = float(text)
+            if amount <= 0:
+                await update.message.reply_text("❌ يرجى إدخال مبلغ أكبر من صفر")
+                return
+            
+            if amount > 10000:
+                await update.message.reply_text("❌ المبلغ كبير جداً. الحد الأقصى هو $10,000")
+                return
+            
+            # Charge user balance
+            success = await charge_user_balance(user_id, amount)
+            
+            # Clear charging context
+            context.user_data.pop('charging_user', None)
+            
+            if success:
+                user_info = await db_manager.get_user(user_id)
+                username = user_info.get('username', 'غير محدد') if user_info else 'غير محدد'
+                first_name = user_info.get('first_name', 'غير محدد') if user_info else 'غير محدد'
+                new_balance = await db_manager.get_user_balance(user_id)
+                
+                keyboard = [[InlineKeyboardButton("🔙 العودة لإدارة المستخدمين", callback_data='manage_users')]]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                
+                success_text = f"""
+✅ تم شحن الرصيد بنجاح!
+
+👤 المستخدم: {first_name} (@{username})
+💰 المبلغ المشحون: ${amount:.2f}
+💳 الرصيد الجديد: ${new_balance:.2f}
+
+📧 تم إشعار المستخدم بالشحن
+                """
+                
+                await update.message.reply_text(success_text, reply_markup=reply_markup)
+            else:
+                keyboard = [[InlineKeyboardButton("🔙 العودة لشحن الرصيد", callback_data='charge_balance')]]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                await update.message.reply_text("❌ فشل في شحن الرصيد", reply_markup=reply_markup)
+                
+        except ValueError:
+            await update.message.reply_text("❌ يرجى إدخال رقم صحيح (مثال: 25.50)")
+            
+    except Exception as e:
+        logger.error(f"Error handling balance charging: {e}")
+        context.user_data.pop('charging_user', None)
+        await update.message.reply_text("❌ حدث خطأ في شحن الرصيد")
 
 
 async def create_card_image_delivery_notification(order_id: str, image_data: bytearray):
@@ -1271,6 +1641,144 @@ async def cancel_order(order_id):
         
     except Exception as e:
         logger.error(f"Error cancelling order {order_id}: {e}")
+        return False
+
+
+async def get_all_users_for_admin():
+    """Get all users for admin management"""
+    try:
+        cursor = db_manager.users.find({}).sort("created_at", -1)
+        users = await cursor.to_list(length=None)
+        return users
+    except Exception as e:
+        logger.error(f"Error getting users for admin: {e}")
+        return []
+
+
+async def get_user_statistics():
+    """Get user statistics for admin dashboard"""
+    try:
+        total_users = await db_manager.users.count_documents({})
+        blocked_users = await db_manager.blacklist.count_documents({})
+        active_users = total_users - blocked_users
+        
+        # Calculate total balance
+        pipeline = [
+            {"$group": {"_id": None, "total_balance": {"$sum": "$balance"}}}
+        ]
+        balance_result = await db_manager.users.aggregate(pipeline).to_list(1)
+        total_balance = balance_result[0]['total_balance'] if balance_result else 0.0
+        
+        # Get order statistics
+        total_orders = await db_manager.orders.count_documents({})
+        
+        # Calculate total sales (completed orders)
+        sales_pipeline = [
+            {"$match": {"status": "completed"}},
+            {"$group": {"_id": None, "total_sales": {"$sum": "$amount"}}}
+        ]
+        sales_result = await db_manager.orders.aggregate(sales_pipeline).to_list(1)
+        total_sales = sales_result[0]['total_sales'] if sales_result else 0.0
+        
+        return {
+            'total_users': total_users,
+            'active_users': active_users,
+            'blocked_users': blocked_users,
+            'total_balance': total_balance,
+            'total_orders': total_orders,
+            'total_sales': total_sales
+        }
+    except Exception as e:
+        logger.error(f"Error getting user statistics: {e}")
+        return {
+            'total_users': 0,
+            'active_users': 0,
+            'blocked_users': 0,
+            'total_balance': 0.0,
+            'total_orders': 0,
+            'total_sales': 0.0
+        }
+
+
+async def get_user_orders(user_id):
+    """Get orders for a specific user"""
+    try:
+        cursor = db_manager.orders.find({"user_id": user_id}).sort("created_at", -1)
+        orders = await cursor.to_list(length=None)
+        return orders
+    except Exception as e:
+        logger.error(f"Error getting orders for user {user_id}: {e}")
+        return []
+
+
+async def charge_user_balance(user_id, amount):
+    """Charge user balance and create notification"""
+    try:
+        # Update user balance
+        success = await db_manager.update_user_balance(user_id, amount)
+        
+        if success:
+            # Create transaction record
+            await db_manager.create_transaction(
+                user_id=user_id,
+                transaction_type="admin_charge",
+                amount=amount,
+                description=f"شحن رصيد من الإدارة: ${amount:.2f}"
+            )
+            
+            # Get updated balance
+            new_balance = await db_manager.get_user_balance(user_id)
+            
+            # Create notification for customer
+            notification_data = {
+                "user_id": user_id,
+                "amount": amount,
+                "new_balance": new_balance,
+                "message": f"💰 تم شحن رصيدك بمبلغ ${amount:.2f}\n\n💳 رصيدك الحالي: ${new_balance:.2f}\n\n🎉 يمكنك الآن شراء البطاقات!"
+            }
+            
+            await db_manager.create_notification("balance_updated", notification_data)
+            logger.info(f"Charged user {user_id} with ${amount:.2f}")
+            return True
+        
+        return False
+        
+    except Exception as e:
+        logger.error(f"Error charging user {user_id} balance: {e}")
+        return False
+
+
+async def toggle_user_block_status(user_id, should_block):
+    """Block or unblock a user and create notification"""
+    try:
+        if should_block:
+            # Block user
+            success = await db_manager.add_to_blacklist(user_id, "حظر من الإدارة")
+            action = "حظر"
+            message = "🚫 تم حظرك من استخدام البوت\n\n💬 للاستفسار، يرجى التواصل مع الدعم."
+        else:
+            # Unblock user
+            success = await db_manager.remove_from_blacklist(user_id)
+            action = "إلغاء حظر"
+            message = "✅ تم إلغاء حظرك من البوت\n\n🎉 يمكنك الآن استخدام جميع الخدمات!"
+        
+        if success:
+            # Create notification for customer
+            notification_data = {
+                "user_id": user_id,
+                "message": message,
+                "action": action
+            }
+            
+            notification_type = "user_unblocked" if not should_block else "user_blocked"
+            await db_manager.create_notification(notification_type, notification_data)
+            logger.info(f"User {user_id} {action} successfully")
+            return True
+        
+        return False
+        
+    except Exception as e:
+        logger.error(f"Error toggling user {user_id} block status: {e}")
         return False
 
 

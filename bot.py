@@ -439,6 +439,12 @@ async def process_card_delivery_notifications(application):
                     await handle_order_status_notification(application, notification)
                 elif notification.get('type') == 'order_cancelled':
                     await handle_order_status_notification(application, notification)
+                elif notification.get('type') == 'balance_updated':
+                    await handle_balance_notification(application, notification)
+                elif notification.get('type') == 'user_blocked':
+                    await handle_block_notification(application, notification)
+                elif notification.get('type') == 'user_unblocked':
+                    await handle_block_notification(application, notification)
                     
             # Wait 5 seconds before checking again
             await asyncio.sleep(5)
@@ -583,6 +589,58 @@ async def handle_order_status_notification(application, notification):
         
     except Exception as e:
         logger.error(f"Error handling order status notification {notification['notification_id']}: {e}")
+
+
+async def handle_balance_notification(application, notification):
+    """Handle balance update notifications"""
+    try:
+        data = notification.get('data', {})
+        user_id = data.get('user_id')
+        message = data.get('message')
+        
+        if not user_id or not message:
+            logger.error(f"Invalid balance notification data: {data}")
+            await db_manager.mark_notification_processed(notification['notification_id'])
+            return
+        
+        # Send balance update message to user
+        await application.bot.send_message(
+            chat_id=user_id,
+            text=message
+        )
+        
+        # Mark notification as processed
+        await db_manager.mark_notification_processed(notification['notification_id'])
+        logger.info(f"Balance notification sent to user {user_id}")
+        
+    except Exception as e:
+        logger.error(f"Error handling balance notification {notification['notification_id']}: {e}")
+
+
+async def handle_block_notification(application, notification):
+    """Handle user block/unblock notifications"""
+    try:
+        data = notification.get('data', {})
+        user_id = data.get('user_id')
+        message = data.get('message')
+        
+        if not user_id or not message:
+            logger.error(f"Invalid block notification data: {data}")
+            await db_manager.mark_notification_processed(notification['notification_id'])
+            return
+        
+        # Send block/unblock message to user
+        await application.bot.send_message(
+            chat_id=user_id,
+            text=message
+        )
+        
+        # Mark notification as processed
+        await db_manager.mark_notification_processed(notification['notification_id'])
+        logger.info(f"Block notification sent to user {user_id}")
+        
+    except Exception as e:
+        logger.error(f"Error handling block notification {notification['notification_id']}: {e}")
 
 
 async def shutdown_database(application):
