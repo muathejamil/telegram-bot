@@ -13,6 +13,26 @@ from telegram.error import BadRequest
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Predefined countries for easy selection
+COUNTRIES = {
+    'US': {'name': 'الولايات المتحدة', 'flag': '🇺🇸'},
+    'UK': {'name': 'المملكة المتحدة', 'flag': '🇬🇧'},
+    'CA': {'name': 'كندا', 'flag': '🇨🇦'},
+    'DE': {'name': 'ألمانيا', 'flag': '🇩🇪'},
+    'FR': {'name': 'فرنسا', 'flag': '🇫🇷'},
+    'IT': {'name': 'إيطاليا', 'flag': '🇮🇹'},
+    'ES': {'name': 'إسبانيا', 'flag': '🇪🇸'},
+    'AU': {'name': 'أستراليا', 'flag': '🇦🇺'},
+    'JP': {'name': 'اليابان', 'flag': '🇯🇵'},
+    'KR': {'name': 'كوريا الجنوبية', 'flag': '🇰🇷'},
+    'AE': {'name': 'الإمارات العربية المتحدة', 'flag': '🇦🇪'},
+    'SA': {'name': 'المملكة العربية السعودية', 'flag': '🇸🇦'},
+    'TR': {'name': 'تركيا', 'flag': '🇹🇷'},
+    'NL': {'name': 'هولندا', 'flag': '🇳🇱'},
+    'SE': {'name': 'السويد', 'flag': '🇸🇪'},
+    'IL': {'name': 'إسرائيل', 'flag': '🇮🇱'},
+}
+
 
 async def safe_edit_message(query, text, reply_markup=None, fallback_answer="تم التحديث ✅"):
     """Safely edit a message, handling BadRequest errors for identical content"""
@@ -110,8 +130,9 @@ async def order_button_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         # Card management functionality
         keyboard = [
             [InlineKeyboardButton("➕ إضافة بطاقة جديدة", callback_data='add_card')],
+            [InlineKeyboardButton("📋 عرض البطاقات", callback_data='view_cards')],
             [InlineKeyboardButton("📝 تعديل البطاقات", callback_data='edit_cards')],
-            [InlineKeyboardButton("🗑️ حذف البطاقات", callback_data='delete_cards')],
+            [InlineKeyboardButton("🔄 تفعيل/إلغاء البطاقات", callback_data='toggle_cards')],
             [InlineKeyboardButton("🔙 العودة للقائمة الرئيسية", callback_data='start')]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -177,6 +198,66 @@ async def order_button_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             await safe_edit_message(query, details_text, reply_markup)
         else:
             await safe_edit_message(query, f"❌ لم يتم العثور على الطلب #{order_id}")
+    
+    # Handle card management
+    elif query.data == 'add_card':
+        # Start card addition process
+        context.user_data['adding_card'] = True
+        context.user_data['card_step'] = 'card_type'
+        
+        keyboard = [[InlineKeyboardButton("❌ إلغاء", callback_data='manage_cards')]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await safe_edit_message(
+            query,
+            "➕ إضافة بطاقات جديدة (إضافة مجمعة)\n\n1️⃣ يرجى إدخال نوع البطاقة (مثال: VISA 25$):",
+            reply_markup
+        )
+    
+    elif query.data == 'view_cards':
+        # Show all cards
+        cards = await get_all_cards_for_admin()
+        if cards:
+            cards_text = "📋 جميع البطاقات:\n\n"
+            for card in cards[:10]:  # Show first 10 cards
+                status = "✅ متاحة" if card.get('is_available') else "❌ غير متاحة"
+                cards_text += f"🏷️ {card['card_type']}\n"
+                cards_text += f"🌍 {card.get('country_name', 'غير محدد')}\n"
+                cards_text += f"💰 {card['price']} USDT\n"
+                cards_text += f"📊 {status}\n\n"
+            
+            keyboard = [[InlineKeyboardButton("🔙 العودة لإدارة البطاقات", callback_data='manage_cards')]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await safe_edit_message(query, cards_text, reply_markup)
+        else:
+            keyboard = [[InlineKeyboardButton("🔙 العودة لإدارة البطاقات", callback_data='manage_cards')]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await safe_edit_message(query, "📋 لا توجد بطاقات في النظام حالياً", reply_markup)
+    
+    elif query.data == 'edit_cards':
+        keyboard = [[InlineKeyboardButton("🔙 العودة لإدارة البطاقات", callback_data='manage_cards')]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await safe_edit_message(query, "📝 تعديل البطاقات\n\n(قيد التطوير)", reply_markup)
+    
+    elif query.data == 'toggle_cards':
+        keyboard = [[InlineKeyboardButton("🔙 العودة لإدارة البطاقات", callback_data='manage_cards')]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await safe_edit_message(query, "🔄 تفعيل/إلغاء البطاقات\n\n(قيد التطوير)", reply_markup)
+    
+    # Handle country selection for card addition
+    elif query.data.startswith('country_select_'):
+        country_code = query.data.split('_')[2]  # Extract country code
+        if country_code in COUNTRIES:
+            context.user_data['country_code'] = country_code
+            context.user_data['country_name'] = COUNTRIES[country_code]['name']
+            context.user_data['card_step'] = 'price'
+            
+            keyboard = [[InlineKeyboardButton("❌ إلغاء", callback_data='manage_cards')]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await safe_edit_message(
+                query,
+                f"✅ الدولة: {COUNTRIES[country_code]['flag']} {COUNTRIES[country_code]['name']}\n\n3️⃣ يرجى إدخال سعر البطاقة بالدولار (مثال: 25.00):",
+                reply_markup
+            )
     
     # Handle card details input
     elif query.data.startswith('input_card_'):
@@ -249,6 +330,142 @@ async def handle_card_image_upload(update: Update, context: ContextTypes.DEFAULT
         await update.message.reply_text("❌ حدث خطأ في معالجة الصورة. يرجى المحاولة مرة أخرى.")
 
 
+async def handle_card_addition_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle text input for adding new cards"""
+    user = update.effective_user
+    
+    # Check if user is admin
+    admin_id = os.getenv('ADMIN_USER_ID')
+    if not admin_id or str(user.id) != admin_id:
+        return
+    
+    # Check if we're adding a card
+    if not context.user_data.get('adding_card'):
+        return
+    
+    step = context.user_data.get('card_step')
+    text = update.message.text
+    
+    try:
+        if step == 'card_type':
+            context.user_data['card_type'] = text
+            context.user_data['card_step'] = 'country_selection'
+            
+            # Create country selection keyboard
+            keyboard = []
+            countries_list = list(COUNTRIES.items())
+            
+            # Create rows of 2 countries each
+            for i in range(0, len(countries_list), 2):
+                row = []
+                for j in range(2):
+                    if i + j < len(countries_list):
+                        code, info = countries_list[i + j]
+                        row.append(InlineKeyboardButton(
+                            f"{info['flag']} {code}",
+                            callback_data=f"country_select_{code}"
+                        ))
+                keyboard.append(row)
+            
+            keyboard.append([InlineKeyboardButton("❌ إلغاء", callback_data='manage_cards')])
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await update.message.reply_text(
+                f"✅ نوع البطاقة: {text}\n\n2️⃣ اختر الدولة:",
+                reply_markup=reply_markup
+            )
+        
+        elif step == 'price':
+            try:
+                price = float(text)
+                context.user_data['price'] = price
+                context.user_data['card_step'] = 'value'
+                
+                keyboard = [[InlineKeyboardButton("❌ إلغاء", callback_data='manage_cards')]]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                await update.message.reply_text(
+                    f"✅ السعر: ${price}\n\n4️⃣ يرجى إدخال قيمة البطاقة (مثال: 25.00):",
+                    reply_markup=reply_markup
+                )
+            except ValueError:
+                await update.message.reply_text("❌ يرجى إدخال رقم صحيح للسعر (مثال: 25.00)")
+        
+        elif step == 'value':
+            try:
+                value = float(text)
+                context.user_data['value'] = value
+                context.user_data['card_step'] = 'quantity'
+                
+                keyboard = [[InlineKeyboardButton("❌ إلغاء", callback_data='manage_cards')]]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                await update.message.reply_text(
+                    f"✅ قيمة البطاقة: ${value}\n\n5️⃣ يرجى إدخال عدد البطاقات المطلوب إنشاؤها (مثال: 5):",
+                    reply_markup=reply_markup
+                )
+            except ValueError:
+                await update.message.reply_text("❌ يرجى إدخال رقم صحيح للقيمة (مثال: 25.00)")
+        
+        elif step == 'quantity':
+            try:
+                quantity = int(text)
+                if quantity <= 0 or quantity > 100:
+                    await update.message.reply_text("❌ يرجى إدخال عدد صحيح بين 1 و 100")
+                    return
+                
+                # Create multiple cards
+                card_base_data = {
+                    'card_type': context.user_data['card_type'],
+                    'country_code': context.user_data['country_code'],
+                    'country_name': context.user_data['country_name'],
+                    'price': context.user_data['price'],
+                    'value': context.user_data['value'],
+                    'currency': 'USD',
+                    'is_available': True,
+                    'created_at': datetime.utcnow()
+                }
+                
+                # Add multiple cards to database
+                success_count = await add_bulk_cards_to_database(card_base_data, quantity)
+                
+                # Clear user context
+                context.user_data.clear()
+                
+                if success_count > 0:
+                    keyboard = [[InlineKeyboardButton("🔙 العودة لإدارة البطاقات", callback_data='manage_cards')]]
+                    reply_markup = InlineKeyboardMarkup(keyboard)
+                    
+                    country_info = COUNTRIES.get(card_base_data['country_code'], {})
+                    flag = country_info.get('flag', '🌍')
+                    
+                    success_text = f"""
+✅ تم إضافة البطاقات بنجاح!
+
+📋 تفاصيل البطاقات:
+🏷️ النوع: {card_base_data['card_type']}
+🌍 الدولة: {flag} {card_base_data['country_name']}
+💰 السعر: ${card_base_data['price']}
+💳 القيمة: ${card_base_data['value']}
+🔢 العدد: {success_count} بطاقة
+📊 الحالة: متاحة
+
+⏰ تم الإنشاء: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+                    """
+                    
+                    await update.message.reply_text(success_text, reply_markup=reply_markup)
+                else:
+                    keyboard = [[InlineKeyboardButton("🔙 العودة لإدارة البطاقات", callback_data='manage_cards')]]
+                    reply_markup = InlineKeyboardMarkup(keyboard)
+                    await update.message.reply_text("❌ حدث خطأ في إضافة البطاقات. يرجى المحاولة مرة أخرى.", reply_markup=reply_markup)
+                
+            except ValueError:
+                await update.message.reply_text("❌ يرجى إدخال رقم صحيح للعدد (مثال: 5)")
+    
+    except Exception as e:
+        logger.error(f"Error handling card addition: {e}")
+        context.user_data.clear()
+        await update.message.reply_text("❌ حدث خطأ. يرجى المحاولة مرة أخرى.")
+
+
 async def create_card_image_delivery_notification(order_id: str, image_data: bytearray):
     """Create notification for customer bot to deliver card image"""
     try:
@@ -275,6 +492,106 @@ async def create_card_image_delivery_notification(order_id: str, image_data: byt
             
     except Exception as e:
         logger.error(f"Error creating card image delivery notification: {e}")
+
+
+async def get_all_cards_for_admin():
+    """Get all cards for admin view"""
+    try:
+        # Get all cards from database
+        cursor = db_manager.cards.find({}).sort("created_at", -1)
+        cards = await cursor.to_list(length=None)
+        return cards
+    except Exception as e:
+        logger.error(f"Error getting cards for admin: {e}")
+        return []
+
+
+async def add_card_to_database(card_data):
+    """Add a new card to the database"""
+    try:
+        # First, ensure the country exists in the countries collection
+        await ensure_country_exists(card_data['country_code'], card_data['country_name'])
+        
+        # Generate unique card ID
+        card_id = f"{card_data['country_code']}_{card_data['card_type'].replace(' ', '_')}_{int(card_data['value'])}"
+        card_data['card_id'] = card_id
+        
+        # Insert card into database
+        result = await db_manager.cards.insert_one(card_data)
+        
+        if result.inserted_id:
+            logger.info(f"Added new card: {card_id}")
+            return True
+        else:
+            logger.error(f"Failed to add card: {card_id}")
+            return False
+            
+    except Exception as e:
+        logger.error(f"Error adding card to database: {e}")
+        return False
+
+
+async def add_bulk_cards_to_database(card_base_data, quantity):
+    """Add multiple cards to the database"""
+    try:
+        # First, ensure the country exists in the countries collection
+        await ensure_country_exists(card_base_data['country_code'], card_base_data['country_name'])
+        
+        success_count = 0
+        
+        for i in range(quantity):
+            # Create unique card ID for each card
+            card_data = card_base_data.copy()
+            card_id = f"{card_data['country_code']}_{card_data['card_type'].replace(' ', '_')}_{int(card_data['value'])}_{i+1:03d}"
+            card_data['card_id'] = card_id
+            
+            # Insert card into database
+            result = await db_manager.cards.insert_one(card_data)
+            
+            if result.inserted_id:
+                success_count += 1
+                logger.info(f"Added bulk card {i+1}/{quantity}: {card_id}")
+            else:
+                logger.error(f"Failed to add bulk card {i+1}/{quantity}: {card_id}")
+        
+        logger.info(f"Successfully added {success_count}/{quantity} cards")
+        return success_count
+        
+    except Exception as e:
+        logger.error(f"Error adding bulk cards to database: {e}")
+        return 0
+
+
+async def ensure_country_exists(country_code, country_name):
+    """Ensure a country exists in the countries collection"""
+    try:
+        # Check if country already exists
+        existing_country = await db_manager.countries.find_one({"code": country_code})
+        
+        if not existing_country:
+            # Get flag from COUNTRIES dict
+            country_info = COUNTRIES.get(country_code, {})
+            flag = country_info.get('flag', '🌍')
+            
+            # Add country to countries collection
+            country_data = {
+                "code": country_code,
+                "name": country_name,
+                "flag": flag,
+                "is_active": True,
+                "created_at": datetime.utcnow()
+            }
+            
+            result = await db_manager.countries.insert_one(country_data)
+            if result.inserted_id:
+                logger.info(f"Added new country: {country_code} - {country_name}")
+            else:
+                logger.error(f"Failed to add country: {country_code}")
+        else:
+            logger.info(f"Country already exists: {country_code}")
+            
+    except Exception as e:
+        logger.error(f"Error ensuring country exists: {e}")
 
 
 async def process_notifications(application):
@@ -412,6 +729,7 @@ def main() -> None:
     application.add_handler(CommandHandler("start", start_order_bot))
     application.add_handler(CallbackQueryHandler(order_button_handler))
     application.add_handler(MessageHandler(filters.PHOTO, handle_card_image_upload))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_card_addition_text))
     
     # Run the bot until the user presses Ctrl-C
     logging.info("Starting order management bot...")
