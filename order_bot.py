@@ -88,31 +88,46 @@ async def order_button_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     
     if query.data == 'pending_orders':
         # Get pending orders from database
-        orders = await db_manager.get_pending_orders()  # You'll need to implement this
+        orders = await db_manager.get_pending_orders()
         
         if orders:
             keyboard = []
-            for order in orders[:10]:  # Show first 10 orders
-                order_text = f"طلب #{order['order_id']} - {order['card_type']}"
+            for order in orders[:15]:  # Show first 15 orders
+                # Get user info for display
+                user_info = await db_manager.get_user(order['user_id'])
+                username = user_info.get('username', 'غير محدد') if user_info else 'غير محدد'
+                
+                # Format order creation time
+                created_at = order.get('created_at', datetime.utcnow())
+                if isinstance(created_at, datetime):
+                    time_str = created_at.strftime('%m-%d %H:%M')
+                else:
+                    time_str = 'غير محدد'
+                
+                order_text = f"📋 #{order['order_id'][:8]} | @{username} | {time_str}"
                 keyboard.append([InlineKeyboardButton(
                     order_text,
-                    callback_data=f"order_{order['order_id']}"
+                    callback_data=f"pending_order_{order['order_id']}"
                 )])
             
+            keyboard.append([InlineKeyboardButton("🔄 تحديث القائمة", callback_data='pending_orders')])
             keyboard.append([InlineKeyboardButton("🔙 العودة للقائمة الرئيسية", callback_data='start')])
             reply_markup = InlineKeyboardMarkup(keyboard)
             
             await safe_edit_message(
                 query,
-                f"📋 الطلبات المعلقة ({len(orders)}):\n\nاختر طلباً لعرض التفاصيل:",
+                f"📋 الطلبات المعلقة ({len(orders)})\n\n⏳ طلبات تحتاج إلى إكمال:\n\nاختر طلباً لعرض التفاصيل وإكماله:",
                 reply_markup
             )
         else:
-            keyboard = [[InlineKeyboardButton("🔙 العودة للقائمة الرئيسية", callback_data='start')]]
+            keyboard = [
+                [InlineKeyboardButton("🔄 تحديث القائمة", callback_data='pending_orders')],
+                [InlineKeyboardButton("🔙 العودة للقائمة الرئيسية", callback_data='start')]
+            ]
             reply_markup = InlineKeyboardMarkup(keyboard)
             await safe_edit_message(
                 query,
-                "✅ لا توجد طلبات معلقة حالياً",
+                "✅ لا توجد طلبات معلقة حالياً\n\n🎉 جميع الطلبات مكتملة!",
                 reply_markup
             )
     
@@ -200,6 +215,142 @@ async def order_button_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             await safe_edit_message(query, details_text, reply_markup)
         else:
             await safe_edit_message(query, f"❌ لم يتم العثور على الطلب #{order_id}")
+    
+    # Handle individual pending orders
+    elif query.data.startswith('pending_order_'):
+        order_id = query.data[14:]  # Remove 'pending_order_' prefix
+        order = await db_manager.get_order_by_id(order_id)
+        
+        if order:
+            # Get user and card information
+            user_info = await db_manager.get_user(order['user_id'])
+            card_info = await get_card_by_id(order['card_id'])
+            
+            username = user_info.get('username', 'غير محدد') if user_info else 'غير محدد'
+            first_name = user_info.get('first_name', 'غير محدد') if user_info else 'غير محدد'
+            
+            # Format timestamps
+            created_at = order.get('created_at', datetime.utcnow())
+            if isinstance(created_at, datetime):
+                created_str = created_at.strftime('%Y-%m-%d %H:%M:%S')
+            else:
+                created_str = 'غير محدد'
+            
+            # Card details
+            if card_info:
+                country_info = COUNTRIES.get(card_info['country_code'], {})
+                flag = country_info.get('flag', '🌍')
+                card_details = f"{card_info['card_type']} - {flag} {card_info['country_name']}"
+                card_price = f"${card_info['price']}"
+                card_value = f"${card_info['value']}"
+            else:
+                card_details = "بطاقة غير موجودة"
+                card_price = "غير محدد"
+                card_value = "غير محدد"
+            
+            order_details = f"""
+📋 تفاصيل الطلب المعلق
+
+🆔 رقم الطلب: {order['order_id']}
+👤 العميل: {first_name} (@{username})
+🆔 معرف العميل: {order['user_id']}
+
+💳 البطاقة المطلوبة:
+{card_details}
+💰 السعر: {card_price}
+💎 القيمة: {card_value}
+
+📊 حالة الطلب: ⏳ معلق
+📅 تاريخ الطلب: {created_str}
+💵 المبلغ المدفوع: ${order.get('amount', 0)}
+
+⚡ اختر الإجراء المطلوب:
+            """
+            
+            keyboard = [
+                [InlineKeyboardButton("📤 إرسال تفاصيل البطاقة", callback_data=f"send_card_{order_id}")],
+                [InlineKeyboardButton("✅ تأكيد اكتمال الطلب", callback_data=f"complete_order_{order_id}")],
+                [InlineKeyboardButton("❌ إلغاء الطلب", callback_data=f"cancel_order_{order_id}")],
+                [InlineKeyboardButton("🔙 العودة للطلبات المعلقة", callback_data='pending_orders')]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await safe_edit_message(query, order_details, reply_markup)
+        else:
+            keyboard = [[InlineKeyboardButton("🔙 العودة للطلبات المعلقة", callback_data='pending_orders')]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await safe_edit_message(query, f"❌ لم يتم العثور على الطلب #{order_id}", reply_markup)
+    
+    # Handle order completion
+    elif query.data.startswith('complete_order_'):
+        order_id = query.data[15:]  # Remove 'complete_order_' prefix
+        success = await complete_order(order_id)
+        
+        if success:
+            keyboard = [[InlineKeyboardButton("🔙 العودة للطلبات المعلقة", callback_data='pending_orders')]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await safe_edit_message(
+                query,
+                f"✅ تم إكمال الطلب #{order_id} بنجاح!\n\n🎉 تم إشعار العميل بإكمال الطلب.",
+                reply_markup
+            )
+        else:
+            keyboard = [[InlineKeyboardButton("🔙 العودة للطلبات المعلقة", callback_data='pending_orders')]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await safe_edit_message(query, f"❌ فشل في إكمال الطلب #{order_id}", reply_markup)
+    
+    # Handle order cancellation
+    elif query.data.startswith('cancel_order_'):
+        order_id = query.data[13:]  # Remove 'cancel_order_' prefix
+        order = await db_manager.get_order_by_id(order_id)
+        
+        if order:
+            keyboard = [
+                [InlineKeyboardButton("✅ نعم، إلغاء الطلب", callback_data=f"confirm_cancel_{order_id}")],
+                [InlineKeyboardButton("❌ لا، العودة للطلب", callback_data=f"pending_order_{order_id}")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await safe_edit_message(
+                query,
+                f"⚠️ تأكيد إلغاء الطلب\n\nهل أنت متأكد من إلغاء الطلب #{order_id}?\n\n⚠️ سيتم إشعار العميل بإلغاء الطلب.",
+                reply_markup
+            )
+        else:
+            keyboard = [[InlineKeyboardButton("🔙 العودة للطلبات المعلقة", callback_data='pending_orders')]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await safe_edit_message(query, f"❌ لم يتم العثور على الطلب #{order_id}", reply_markup)
+    
+    elif query.data.startswith('confirm_cancel_'):
+        order_id = query.data[15:]  # Remove 'confirm_cancel_' prefix
+        success = await cancel_order(order_id)
+        
+        if success:
+            keyboard = [[InlineKeyboardButton("🔙 العودة للطلبات المعلقة", callback_data='pending_orders')]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await safe_edit_message(
+                query,
+                f"❌ تم إلغاء الطلب #{order_id}\n\n📧 تم إشعار العميل بإلغاء الطلب.",
+                reply_markup
+            )
+        else:
+            keyboard = [[InlineKeyboardButton("🔙 العودة للطلبات المعلقة", callback_data='pending_orders')]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await safe_edit_message(query, f"❌ فشل في إلغاء الطلب #{order_id}", reply_markup)
+    
+    # Handle sending card details (reuse existing functionality)
+    elif query.data.startswith('send_card_'):
+        order_id = query.data[10:]  # Remove 'send_card_' prefix
+        # Store the order_id in user context for the next messages
+        context.user_data['awaiting_card_image'] = order_id
+        
+        keyboard = [[InlineKeyboardButton("❌ إلغاء", callback_data=f'pending_order_{order_id}')]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await safe_edit_message(
+            query,
+            f"📷 إرسال صورة البطاقة للطلب #{order_id}\n\n📤 يرجى إرسال صورة تحتوي على تفاصيل البطاقة:",
+            reply_markup
+        )
     
     # Handle card management
     elif query.data == 'add_card':
@@ -586,7 +737,8 @@ async def handle_card_image_upload(update: Update, context: ContextTypes.DEFAULT
         # Clear user context
         context.user_data.clear()
         
-        keyboard = [[InlineKeyboardButton("🏠 العودة للقائمة الرئيسية", callback_data='start')]]
+        # keyboard = [[InlineKeyboardButton("🏠 العودة للقائمة الرئيسية", callback_data='start')]]
+        keyboard = []
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         confirmation_text = f"""
@@ -1045,6 +1197,80 @@ async def restore_card_from_deletion(card_id):
             
     except Exception as e:
         logger.error(f"Error restoring card from deletion: {e}")
+        return False
+
+
+async def complete_order(order_id):
+    """Mark an order as completed and notify the customer"""
+    try:
+        # Update order status to completed
+        result = await db_manager.orders.update_one(
+            {"order_id": order_id},
+            {
+                "$set": {
+                    "status": "completed",
+                    "completed_at": datetime.utcnow()
+                }
+            }
+        )
+        
+        if result.modified_count > 0:
+            # Get order details for notification
+            order = await db_manager.get_order_by_id(order_id)
+            if order:
+                # Create notification for customer
+                notification_data = {
+                    "user_id": order['user_id'],
+                    "order_id": order_id,
+                    "message": f"✅ تم إكمال طلبك #{order_id} بنجاح!\n\n🎉 شكراً لك على استخدام خدماتنا."
+                }
+                
+                await db_manager.create_notification("order_completed", notification_data)
+                logger.info(f"Order {order_id} marked as completed")
+                return True
+        
+        logger.error(f"Failed to complete order {order_id}")
+        return False
+        
+    except Exception as e:
+        logger.error(f"Error completing order {order_id}: {e}")
+        return False
+
+
+async def cancel_order(order_id):
+    """Cancel an order and notify the customer"""
+    try:
+        # Update order status to cancelled
+        result = await db_manager.orders.update_one(
+            {"order_id": order_id},
+            {
+                "$set": {
+                    "status": "cancelled",
+                    "cancelled_at": datetime.utcnow()
+                }
+            }
+        )
+        
+        if result.modified_count > 0:
+            # Get order details for notification
+            order = await db_manager.get_order_by_id(order_id)
+            if order:
+                # Create notification for customer
+                notification_data = {
+                    "user_id": order['user_id'],
+                    "order_id": order_id,
+                    "message": f"❌ تم إلغاء طلبك #{order_id}\n\n💬 إذا كان لديك أي استفسار، يرجى التواصل مع الدعم."
+                }
+                
+                await db_manager.create_notification("order_cancelled", notification_data)
+                logger.info(f"Order {order_id} cancelled")
+                return True
+        
+        logger.error(f"Failed to cancel order {order_id}")
+        return False
+        
+    except Exception as e:
+        logger.error(f"Error cancelling order {order_id}: {e}")
         return False
 
 

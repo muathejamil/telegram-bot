@@ -435,6 +435,10 @@ async def process_card_delivery_notifications(application):
                     await handle_card_delivery(application, notification)
                 elif notification.get('type') == 'deliver_card_image':
                     await handle_card_image_delivery(application, notification)
+                elif notification.get('type') == 'order_completed':
+                    await handle_order_status_notification(application, notification)
+                elif notification.get('type') == 'order_cancelled':
+                    await handle_order_status_notification(application, notification)
                     
             # Wait 5 seconds before checking again
             await asyncio.sleep(5)
@@ -553,6 +557,33 @@ async def startup_database(application):
     except Exception as e:
         logging.error(f"Failed to connect to database: {e}")
         raise
+
+
+async def handle_order_status_notification(application, notification):
+    """Handle order status change notifications (completed/cancelled)"""
+    try:
+        data = notification.get('data', {})
+        user_id = data.get('user_id')
+        message = data.get('message')
+        
+        if not user_id or not message:
+            logger.error(f"Invalid order status notification data: {data}")
+            await db_manager.mark_notification_processed(notification['notification_id'])
+            return
+        
+        # Send notification message to user
+        await application.bot.send_message(
+            chat_id=user_id,
+            text=message
+        )
+        
+        # Mark notification as processed
+        await db_manager.mark_notification_processed(notification['notification_id'])
+        logger.info(f"Order status notification sent to user {user_id}")
+        
+    except Exception as e:
+        logger.error(f"Error handling order status notification {notification['notification_id']}: {e}")
+
 
 async def shutdown_database(application):
     """Close database connection"""
