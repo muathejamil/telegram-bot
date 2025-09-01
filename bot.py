@@ -1,5 +1,8 @@
 import os
 import logging
+import asyncio
+import base64
+import io
 from datetime import datetime
 from telegram import ForceReply, Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters, CallbackQueryHandler
@@ -419,6 +422,116 @@ async def create_order_notification(user, card, order_id):
     except Exception as e:
         logging.error(f"Error creating order notification: {e}")
 
+
+async def process_card_delivery_notifications(application):
+    """Background task to process card delivery notifications"""
+    while True:
+        try:
+            # Get pending card delivery notifications
+            notifications = await db_manager.get_pending_notifications()
+            
+            for notification in notifications:
+                if notification.get('type') == 'deliver_card':
+                    await handle_card_delivery(application, notification)
+                elif notification.get('type') == 'deliver_card_image':
+                    await handle_card_image_delivery(application, notification)
+                    
+            # Wait 5 seconds before checking again
+            await asyncio.sleep(5)
+            
+        except Exception as e:
+            logger.error(f"Error in card delivery notification processing: {e}")
+            await asyncio.sleep(10)  # Wait longer on error
+
+
+async def handle_card_delivery(application, notification):
+    """Handle card delivery notification"""
+    try:
+        data = notification.get('data', {})
+        user_id = data.get('user_id')
+        order_id = data.get('order_id')
+        card_details = data.get('card_details', {})
+        
+        if not user_id or not card_details:
+            logger.error(f"Invalid card delivery notification data: {data}")
+            return
+        
+        # Format card details message
+        card_message = f"""
+🎉 تم تجهيز بطاقتك بنجاح!
+
+📋 تفاصيل البطاقة:
+🆔 رقم الطلب: {order_id}
+👤 اسم حامل البطاقة: {card_details.get('holder_name')}
+💳 رقم البطاقة: {card_details.get('card_number')}
+🔒 رمز CVV: {card_details.get('cvv')}
+
+⚠️ تعليمات مهمة:
+• احتفظ بهذه المعلومات في مكان آمن
+• لا تشارك تفاصيل البطاقة مع أي شخص
+• تأكد من استخدام البطاقة في المواقع الآمنة فقط
+
+✅ شكراً لاستخدام خدماتنا!
+        """
+        
+        await application.bot.send_message(
+            chat_id=user_id,
+            text=card_message
+        )
+        
+        # Mark notification as processed
+        await db_manager.mark_notification_processed(notification['notification_id'])
+        logger.info(f"Delivered card details for order {order_id} to user {user_id}")
+        
+    except Exception as e:
+        logger.error(f"Error handling card delivery notification {notification.get('notification_id')}: {e}")
+
+
+async def handle_card_image_delivery(application, notification):
+    """Handle card image delivery notification"""
+    try:
+        data = notification.get('data', {})
+        user_id = data.get('user_id')
+        order_id = data.get('order_id')
+        image_data_base64 = data.get('image_data')
+        
+        if not user_id or not image_data_base64:
+            logger.error(f"Invalid card image delivery notification data: {data}")
+            return
+        
+        # Decode base64 image data
+        image_data = base64.b64decode(image_data_base64)
+        image_io = io.BytesIO(image_data)
+        
+        # Send the image with a caption
+        caption = f"""
+🎉 تم تجهيز بطاقتك بنجاح!
+
+🆔 رقم الطلب: {order_id}
+📷 تفاصيل البطاقة في الصورة أعلاه
+
+⚠️ تعليمات مهمة:
+• احتفظ بهذه الصورة في مكان آمن
+• لا تشارك تفاصيل البطاقة مع أي شخص
+• تأكد من استخدام البطاقة في المواقع الآمنة فقط
+
+✅ شكراً لاستخدام خدماتنا!
+        """
+        
+        await application.bot.send_photo(
+            chat_id=user_id,
+            photo=image_io,
+            caption=caption
+        )
+        
+        # Mark notification as processed
+        await db_manager.mark_notification_processed(notification['notification_id'])
+        logger.info(f"Delivered card image for order {order_id} to user {user_id}")
+        
+    except Exception as e:
+        logger.error(f"Error handling card image delivery notification {notification.get('notification_id')}: {e}")
+
+
 async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Echo the user message."""
     await update.message.reply_text(update.message.text)
@@ -428,10 +541,15 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     await update.message.reply_text("Use /start to test this bot.")
 
 async def startup_database(application):
-    """Initialize database connection"""
+    """Initialize database connection and start notification processor"""
     try:
         await db_manager.connect()
         logging.info("Database connected successfully")
+        
+        # Start the notification processor for card deliveries
+        asyncio.create_task(process_card_delivery_notifications(application))
+        logging.info("Started card delivery notification processor")
+        
     except Exception as e:
         logging.error(f"Failed to connect to database: {e}")
         raise

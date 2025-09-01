@@ -1,6 +1,7 @@
 import os
 import logging
 import asyncio
+import base64
 from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters, CallbackQueryHandler
@@ -139,8 +140,17 @@ async def order_button_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     # Handle order action buttons
     elif query.data.startswith('sent_'):
         order_id = query.data[5:]  # Remove 'sent_' prefix
-        await db_manager.update_order_status(order_id, 'completed')
-        await safe_edit_message(query, f"✅ تم تأكيد إرسال البطاقة للطلب #{order_id}")
+        # Ask admin to provide card details
+        keyboard = [
+            [InlineKeyboardButton("📝 إدخال تفاصيل البطاقة", callback_data=f"input_card_{order_id}")],
+            [InlineKeyboardButton("❌ إلغاء", callback_data='start')]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await safe_edit_message(
+            query, 
+            f"📋 الطلب #{order_id}\n\nيرجى إدخال تفاصيل البطاقة للعميل:",
+            reply_markup
+        )
     
     elif query.data.startswith('cancel_'):
         order_id = query.data[7:]  # Remove 'cancel_' prefix
@@ -167,6 +177,104 @@ async def order_button_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             await safe_edit_message(query, details_text, reply_markup)
         else:
             await safe_edit_message(query, f"❌ لم يتم العثور على الطلب #{order_id}")
+    
+    # Handle card details input
+    elif query.data.startswith('input_card_'):
+        order_id = query.data[11:]  # Remove 'input_card_' prefix
+        # Store the order_id in user context for the next messages
+        context.user_data['awaiting_card_image'] = order_id
+        
+        keyboard = [[InlineKeyboardButton("❌ إلغاء", callback_data='start')]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await safe_edit_message(
+            query,
+            f"📷 إرسال صورة البطاقة للطلب #{order_id}\n\n📤 يرجى إرسال صورة تحتوي على تفاصيل البطاقة:",
+            reply_markup
+        )
+
+
+async def handle_card_image_upload(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle image upload for card details"""
+    user = update.effective_user
+    
+    # Check if user is admin
+    admin_id = os.getenv('ADMIN_USER_ID')
+    if not admin_id or str(user.id) != admin_id:
+        return
+    
+    # Check if we're waiting for card image
+    if 'awaiting_card_image' not in context.user_data:
+        return
+    
+    order_id = context.user_data['awaiting_card_image']
+    
+    # Check if message has photo
+    if not update.message.photo:
+        await update.message.reply_text("❌ يرجى إرسال صورة وليس نص. أرسل صورة البطاقة.")
+        return
+    
+    try:
+        # Get the highest resolution photo
+        photo = update.message.photo[-1]
+        
+        # Download the image file
+        file = await context.bot.get_file(photo.file_id)
+        file_bytes = await file.download_as_bytearray()
+        
+        # Create notification for customer bot to send image to user
+        await create_card_image_delivery_notification(order_id, file_bytes)
+        
+        # Update order status
+        await db_manager.update_order_status(order_id, 'completed')
+        
+        # Clear user context
+        context.user_data.clear()
+        
+        keyboard = [[InlineKeyboardButton("🏠 العودة للقائمة الرئيسية", callback_data='start')]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        confirmation_text = f"""
+✅ تم إرسال صورة البطاقة بنجاح!
+
+🆔 رقم الطلب: {order_id}
+📷 تم إرسال الصورة للعميل عبر البوت الرئيسي.
+
+⏰ وقت الإرسال: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+        """
+        
+        await update.message.reply_text(confirmation_text, reply_markup=reply_markup)
+        
+    except Exception as e:
+        logger.error(f"Error handling card image upload: {e}")
+        await update.message.reply_text("❌ حدث خطأ في معالجة الصورة. يرجى المحاولة مرة أخرى.")
+
+
+async def create_card_image_delivery_notification(order_id: str, image_data: bytearray):
+    """Create notification for customer bot to deliver card image"""
+    try:
+        # Get order details to find the user
+        order = await db_manager.get_order_by_id(order_id)
+        if not order:
+            logger.error(f"Order {order_id} not found")
+            return
+        
+        # Convert bytearray to base64 for storage
+        image_base64 = base64.b64encode(image_data).decode('utf-8')
+        
+        notification_data = {
+            "order_id": order_id,
+            "user_id": order.get('user_id'),
+            "image_data": image_base64
+        }
+        
+        notification_id = await db_manager.create_notification("deliver_card_image", notification_data)
+        if notification_id:
+            logger.info(f"Created card image delivery notification {notification_id} for order {order_id}")
+        else:
+            logger.error(f"Failed to create card image delivery notification for order {order_id}")
+            
+    except Exception as e:
+        logger.error(f"Error creating card image delivery notification: {e}")
 
 
 async def process_notifications(application):
@@ -303,6 +411,7 @@ def main() -> None:
     # Add command and message handlers
     application.add_handler(CommandHandler("start", start_order_bot))
     application.add_handler(CallbackQueryHandler(order_button_handler))
+    application.add_handler(MessageHandler(filters.PHOTO, handle_card_image_upload))
     
     # Run the bot until the user presses Ctrl-C
     logging.info("Starting order management bot...")
