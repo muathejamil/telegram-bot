@@ -132,7 +132,9 @@ async def order_button_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             [InlineKeyboardButton("➕ إضافة بطاقة جديدة", callback_data='add_card')],
             [InlineKeyboardButton("📋 عرض البطاقات", callback_data='view_cards')],
             [InlineKeyboardButton("📝 تعديل البطاقات", callback_data='edit_cards')],
-            [InlineKeyboardButton("🔄 تفعيل/إلغاء البطاقات", callback_data='toggle_cards')],
+            [InlineKeyboardButton("🗑️ حذف البطاقات", callback_data='remove_cards')],
+            # [InlineKeyboardButton("🔄 تفعيل/إلغاء البطاقات", callback_data='toggle_cards')],
+            [InlineKeyboardButton("🗂️ عرض البطاقات المحذوفة", callback_data='view_deleted_cards')],
             [InlineKeyboardButton("🔙 العودة للقائمة الرئيسية", callback_data='start')]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -234,14 +236,137 @@ async def order_button_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             await safe_edit_message(query, "📋 لا توجد بطاقات في النظام حالياً", reply_markup)
     
     elif query.data == 'edit_cards':
-        keyboard = [[InlineKeyboardButton("🔙 العودة لإدارة البطاقات", callback_data='manage_cards')]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await safe_edit_message(query, "📝 تعديل البطاقات\n\n(قيد التطوير)", reply_markup)
+        # Show cards for editing
+        cards = await get_all_cards_for_admin()
+        if cards:
+            keyboard = []
+            for card in cards[:20]:  # Limit to 20 cards to avoid message length issues
+                status_icon = "✅" if card['is_available'] else "❌"
+                card_text = f"{status_icon} {card['card_type']} - {card['country_code']} (${card['price']})"
+                keyboard.append([InlineKeyboardButton(
+                    card_text,
+                    callback_data=f"edit_card_{card['card_id']}"
+                )])
+            
+            keyboard.append([InlineKeyboardButton("🔙 العودة لإدارة البطاقات", callback_data='manage_cards')])
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await safe_edit_message(
+                query,
+                "📝 تعديل البطاقات\n\nاختر البطاقة التي تريد تعديلها:",
+                reply_markup
+            )
+        else:
+            keyboard = [[InlineKeyboardButton("🔙 العودة لإدارة البطاقات", callback_data='manage_cards')]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await safe_edit_message(query, "❌ لا توجد بطاقات للتعديل", reply_markup)
     
     elif query.data == 'toggle_cards':
-        keyboard = [[InlineKeyboardButton("🔙 العودة لإدارة البطاقات", callback_data='manage_cards')]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await safe_edit_message(query, "🔄 تفعيل/إلغاء البطاقات\n\n(قيد التطوير)", reply_markup)
+        # Show cards for toggling availability
+        cards = await get_all_cards_for_admin()
+        if cards:
+            keyboard = []
+            for card in cards[:20]:  # Limit to 20 cards
+                status_icon = "✅" if card['is_available'] else "❌"
+                action_text = "إلغاء" if card['is_available'] else "تفعيل"
+                card_text = f"{status_icon} {card['card_type']} - {card['country_code']} ({action_text})"
+                keyboard.append([InlineKeyboardButton(
+                    card_text,
+                    callback_data=f"toggle_card_{card['card_id']}"
+                )])
+            
+            keyboard.append([InlineKeyboardButton("🔙 العودة لإدارة البطاقات", callback_data='manage_cards')])
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await safe_edit_message(
+                query,
+                "🔄 تفعيل/إلغاء البطاقات\n\nاختر البطاقة لتغيير حالتها:",
+                reply_markup
+            )
+        else:
+            keyboard = [[InlineKeyboardButton("🔙 العودة لإدارة البطاقات", callback_data='manage_cards')]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await safe_edit_message(query, "❌ لا توجد بطاقات للتعديل", reply_markup)
+    
+    elif query.data == 'remove_cards':
+        # Show cards for removal
+        cards = await get_all_cards_for_admin()
+        if cards:
+            keyboard = []
+            for card in cards[:20]:  # Limit to 20 cards
+                status_icon = "✅" if card['is_available'] else "❌"
+                card_text = f"{status_icon} {card['card_type']} - {card['country_code']} (${card['price']})"
+                keyboard.append([InlineKeyboardButton(
+                    card_text,
+                    callback_data=f"remove_card_{card['card_id']}"
+                )])
+            
+            keyboard.append([InlineKeyboardButton("🔙 العودة لإدارة البطاقات", callback_data='manage_cards')])
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await safe_edit_message(
+                query,
+                "🗑️ حذف البطاقات\n\n⚠️ تحذير: سيتم حذف البطاقة نهائياً!\nاختر البطاقة التي تريد حذفها:",
+                reply_markup
+            )
+        else:
+            keyboard = [[InlineKeyboardButton("🔙 العودة لإدارة البطاقات", callback_data='manage_cards')]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await safe_edit_message(query, "❌ لا توجد بطاقات للحذف", reply_markup)
+    
+    elif query.data == 'view_deleted_cards':
+        # Show deleted cards
+        deleted_cards = await get_deleted_cards_for_admin()
+        if deleted_cards:
+            cards_text = "🗂️ البطاقات المحذوفة:\n\n"
+            for i, card in enumerate(deleted_cards[:15], 1):  # Limit to 15 cards
+                country_info = COUNTRIES.get(card['country_code'], {})
+                flag = country_info.get('flag', '🌍')
+                deleted_at = card.get('deleted_at', 'غير محدد')
+                if isinstance(deleted_at, datetime):
+                    deleted_at = deleted_at.strftime('%Y-%m-%d %H:%M')
+                
+                cards_text += f"{i}. 🗑️ {card['card_type']} - {flag} {card['country_code']}\n"
+                cards_text += f"   💰 السعر: ${card['price']} | 💳 القيمة: ${card['value']}\n"
+                cards_text += f"   📅 تاريخ الحذف: {deleted_at}\n\n"
+            
+            keyboard = [
+                [InlineKeyboardButton("♻️ استعادة البطاقات", callback_data='restore_cards')],
+                [InlineKeyboardButton("🔙 العودة لإدارة البطاقات", callback_data='manage_cards')]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await safe_edit_message(query, cards_text, reply_markup)
+        else:
+            keyboard = [[InlineKeyboardButton("🔙 العودة لإدارة البطاقات", callback_data='manage_cards')]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await safe_edit_message(query, "✅ لا توجد بطاقات محذوفة", reply_markup)
+    
+    elif query.data == 'restore_cards':
+        # Show deleted cards for restoration
+        deleted_cards = await get_deleted_cards_for_admin()
+        if deleted_cards:
+            keyboard = []
+            for card in deleted_cards[:20]:  # Limit to 20 cards
+                country_info = COUNTRIES.get(card['country_code'], {})
+                flag = country_info.get('flag', '🌍')
+                card_text = f"♻️ {card['card_type']} - {flag} {card['country_code']} (${card['price']})"
+                keyboard.append([InlineKeyboardButton(
+                    card_text,
+                    callback_data=f"restore_card_{card['card_id']}"
+                )])
+            
+            keyboard.append([InlineKeyboardButton("🔙 العودة للبطاقات المحذوفة", callback_data='view_deleted_cards')])
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await safe_edit_message(
+                query,
+                "♻️ استعادة البطاقات\n\nاختر البطاقة التي تريد استعادتها:",
+                reply_markup
+            )
+        else:
+            keyboard = [[InlineKeyboardButton("🔙 العودة لإدارة البطاقات", callback_data='manage_cards')]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await safe_edit_message(query, "✅ لا توجد بطاقات محذوفة للاستعادة", reply_markup)
     
     # Handle country selection for card addition
     elif query.data.startswith('country_select_'):
@@ -258,6 +383,156 @@ async def order_button_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                 f"✅ الدولة: {COUNTRIES[country_code]['flag']} {COUNTRIES[country_code]['name']}\n\n3️⃣ يرجى إدخال سعر البطاقة بالدولار (مثال: 25.00):",
                 reply_markup
             )
+    
+    # Handle individual card actions
+    elif query.data.startswith('edit_card_'):
+        card_id = query.data[10:]  # Remove 'edit_card_' prefix
+        card = await get_card_by_id(card_id)
+        
+        if card:
+            keyboard = [
+                [InlineKeyboardButton("💰 تعديل السعر", callback_data=f"edit_price_{card_id}")],
+                [InlineKeyboardButton("💳 تعديل القيمة", callback_data=f"edit_value_{card_id}")],
+                [InlineKeyboardButton("🏷️ تعديل النوع", callback_data=f"edit_type_{card_id}")],
+                [InlineKeyboardButton("🔙 العودة لقائمة التعديل", callback_data='edit_cards')]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            status = "متاحة" if card['is_available'] else "غير متاحة"
+            country_info = COUNTRIES.get(card['country_code'], {})
+            flag = country_info.get('flag', '🌍')
+            
+            card_details = f"""
+📝 تعديل البطاقة
+
+🆔 معرف البطاقة: {card['card_id']}
+🏷️ النوع: {card['card_type']}
+🌍 الدولة: {flag} {card['country_name']}
+💰 السعر: ${card['price']}
+💳 القيمة: ${card['value']}
+📊 الحالة: {status}
+
+اختر ما تريد تعديله:
+            """
+            
+            await safe_edit_message(query, card_details, reply_markup)
+        else:
+            keyboard = [[InlineKeyboardButton("🔙 العودة لقائمة التعديل", callback_data='edit_cards')]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await safe_edit_message(query, "❌ لم يتم العثور على البطاقة", reply_markup)
+    
+    elif query.data.startswith('remove_card_'):
+        card_id = query.data[12:]  # Remove 'remove_card_' prefix
+        card = await get_card_by_id(card_id)
+        
+        if card:
+            keyboard = [
+                [InlineKeyboardButton("✅ نعم، احذف البطاقة", callback_data=f"confirm_remove_{card_id}")],
+                [InlineKeyboardButton("❌ إلغاء", callback_data='remove_cards')]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            country_info = COUNTRIES.get(card['country_code'], {})
+            flag = country_info.get('flag', '🌍')
+            
+            confirmation_text = f"""
+⚠️ تأكيد الحذف
+
+هل أنت متأكد من حذف هذه البطاقة؟
+
+🆔 معرف البطاقة: {card['card_id']}
+🏷️ النوع: {card['card_type']}
+🌍 الدولة: {flag} {card['country_name']}
+💰 السعر: ${card['price']}
+💳 القيمة: ${card['value']}
+
+⚠️ تحذير: هذا الإجراء لا يمكن التراجع عنه!
+            """
+            
+            await safe_edit_message(query, confirmation_text, reply_markup)
+        else:
+            keyboard = [[InlineKeyboardButton("🔙 العودة لقائمة الحذف", callback_data='remove_cards')]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await safe_edit_message(query, "❌ لم يتم العثور على البطاقة", reply_markup)
+    
+    elif query.data.startswith('toggle_card_'):
+        card_id = query.data[12:]  # Remove 'toggle_card_' prefix
+        success = await toggle_card_availability(card_id)
+        
+        if success:
+            keyboard = [[InlineKeyboardButton("🔙 العودة لقائمة التفعيل", callback_data='toggle_cards')]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await safe_edit_message(query, "✅ تم تغيير حالة البطاقة بنجاح!", reply_markup)
+        else:
+            keyboard = [[InlineKeyboardButton("🔙 العودة لقائمة التفعيل", callback_data='toggle_cards')]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await safe_edit_message(query, "❌ فشل في تغيير حالة البطاقة", reply_markup)
+    
+    elif query.data.startswith('confirm_remove_'):
+        card_id = query.data[15:]  # Remove 'confirm_remove_' prefix
+        success = await remove_card_from_database(card_id)
+        
+        if success:
+            keyboard = [[InlineKeyboardButton("🔙 العودة لإدارة البطاقات", callback_data='manage_cards')]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await safe_edit_message(query, "✅ تم حذف البطاقة بنجاح!", reply_markup)
+        else:
+            keyboard = [[InlineKeyboardButton("🔙 العودة لقائمة الحذف", callback_data='remove_cards')]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await safe_edit_message(query, "❌ فشل في حذف البطاقة", reply_markup)
+    
+    elif query.data.startswith('restore_card_'):
+        card_id = query.data[13:]  # Remove 'restore_card_' prefix
+        success = await restore_card_from_deletion(card_id)
+        
+        if success:
+            keyboard = [[InlineKeyboardButton("🔙 العودة للبطاقات المحذوفة", callback_data='view_deleted_cards')]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await safe_edit_message(query, "✅ تم استعادة البطاقة بنجاح!", reply_markup)
+        else:
+            keyboard = [[InlineKeyboardButton("🔙 العودة للبطاقات المحذوفة", callback_data='view_deleted_cards')]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await safe_edit_message(query, "❌ فشل في استعادة البطاقة", reply_markup)
+    
+    # Handle card field editing
+    elif query.data.startswith('edit_price_'):
+        card_id = query.data[11:]  # Remove 'edit_price_' prefix
+        context.user_data['editing_card'] = card_id
+        context.user_data['edit_field'] = 'price'
+        
+        keyboard = [[InlineKeyboardButton("❌ إلغاء", callback_data=f'edit_card_{card_id}')]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await safe_edit_message(
+            query,
+            "💰 تعديل السعر\n\nأدخل السعر الجديد بالدولار (مثال: 25.00):",
+            reply_markup
+        )
+    
+    elif query.data.startswith('edit_value_'):
+        card_id = query.data[11:]  # Remove 'edit_value_' prefix
+        context.user_data['editing_card'] = card_id
+        context.user_data['edit_field'] = 'value'
+        
+        keyboard = [[InlineKeyboardButton("❌ إلغاء", callback_data=f'edit_card_{card_id}')]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await safe_edit_message(
+            query,
+            "💳 تعديل القيمة\n\nأدخل قيمة البطاقة الجديدة (مثال: 25.00):",
+            reply_markup
+        )
+    
+    elif query.data.startswith('edit_type_'):
+        card_id = query.data[10:]  # Remove 'edit_type_' prefix
+        context.user_data['editing_card'] = card_id
+        context.user_data['edit_field'] = 'card_type'
+        
+        keyboard = [[InlineKeyboardButton("❌ إلغاء", callback_data=f'edit_card_{card_id}')]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await safe_edit_message(
+            query,
+            "🏷️ تعديل نوع البطاقة\n\nأدخل نوع البطاقة الجديد (مثال: VISA 50$):",
+            reply_markup
+        )
     
     # Handle card details input
     elif query.data.startswith('input_card_'):
@@ -331,12 +606,17 @@ async def handle_card_image_upload(update: Update, context: ContextTypes.DEFAULT
 
 
 async def handle_card_addition_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle text input for adding new cards"""
+    """Handle text input for adding new cards and editing cards"""
     user = update.effective_user
     
     # Check if user is admin
     admin_id = os.getenv('ADMIN_USER_ID')
     if not admin_id or str(user.id) != admin_id:
+        return
+    
+    # Handle card editing
+    if context.user_data.get('editing_card'):
+        await handle_card_editing(update, context)
         return
     
     # Check if we're adding a card
@@ -421,6 +701,7 @@ async def handle_card_addition_text(update: Update, context: ContextTypes.DEFAUL
                     'value': context.user_data['value'],
                     'currency': 'USD',
                     'is_available': True,
+                    'is_deleted': False,
                     'created_at': datetime.utcnow()
                 }
                 
@@ -466,6 +747,51 @@ async def handle_card_addition_text(update: Update, context: ContextTypes.DEFAUL
         await update.message.reply_text("❌ حدث خطأ. يرجى المحاولة مرة أخرى.")
 
 
+async def handle_card_editing(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle card editing text input"""
+    try:
+        card_id = context.user_data['editing_card']
+        field = context.user_data['edit_field']
+        text = update.message.text
+        
+        success = False
+        if field == 'price':
+            try:
+                price = float(text)
+                success = await update_card_field(card_id, 'price', price)
+            except ValueError:
+                await update.message.reply_text("❌ يرجى إدخال رقم صحيح للسعر (مثال: 25.00)")
+                return
+        elif field == 'value':
+            try:
+                value = float(text)
+                success = await update_card_field(card_id, 'value', value)
+            except ValueError:
+                await update.message.reply_text("❌ يرجى إدخال رقم صحيح للقيمة (مثال: 25.00)")
+                return
+        elif field == 'card_type':
+            success = await update_card_field(card_id, 'card_type', text)
+        
+        # Clear editing context
+        context.user_data.pop('editing_card', None)
+        context.user_data.pop('edit_field', None)
+        
+        if success:
+            keyboard = [[InlineKeyboardButton("🔙 العودة لإدارة البطاقات", callback_data='manage_cards')]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await update.message.reply_text("✅ تم تحديث البطاقة بنجاح!", reply_markup=reply_markup)
+        else:
+            keyboard = [[InlineKeyboardButton("🔙 العودة لإدارة البطاقات", callback_data='manage_cards')]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await update.message.reply_text("❌ فشل في تحديث البطاقة", reply_markup=reply_markup)
+            
+    except Exception as e:
+        logger.error(f"Error updating card: {e}")
+        context.user_data.pop('editing_card', None)
+        context.user_data.pop('edit_field', None)
+        await update.message.reply_text("❌ حدث خطأ في تحديث البطاقة")
+
+
 async def create_card_image_delivery_notification(order_id: str, image_data: bytearray):
     """Create notification for customer bot to deliver card image"""
     try:
@@ -495,10 +821,12 @@ async def create_card_image_delivery_notification(order_id: str, image_data: byt
 
 
 async def get_all_cards_for_admin():
-    """Get all cards for admin view"""
+    """Get all cards for admin view (excluding deleted cards)"""
     try:
-        # Get all cards from database
-        cursor = db_manager.cards.find({}).sort("created_at", -1)
+        # Get all cards from database (excluding deleted ones)
+        cursor = db_manager.cards.find({
+            "is_deleted": {"$ne": True}  # Exclude deleted cards
+        }).sort("created_at", -1)
         cards = await cursor.to_list(length=None)
         return cards
     except Exception as e:
@@ -592,6 +920,132 @@ async def ensure_country_exists(country_code, country_name):
             
     except Exception as e:
         logger.error(f"Error ensuring country exists: {e}")
+
+
+async def get_card_by_id(card_id):
+    """Get a single card by its ID"""
+    try:
+        card = await db_manager.cards.find_one({"card_id": card_id})
+        return card
+    except Exception as e:
+        logger.error(f"Error getting card by ID {card_id}: {e}")
+        return None
+
+
+async def update_card_field(card_id, field, value):
+    """Update a specific field of a card"""
+    try:
+        result = await db_manager.cards.update_one(
+            {"card_id": card_id},
+            {"$set": {field: value, "updated_at": datetime.utcnow()}}
+        )
+        
+        if result.modified_count > 0:
+            logger.info(f"Updated card {card_id}: {field} = {value}")
+            return True
+        else:
+            logger.error(f"Failed to update card {card_id}: {field} = {value}")
+            return False
+            
+    except Exception as e:
+        logger.error(f"Error updating card field: {e}")
+        return False
+
+
+async def toggle_card_availability(card_id):
+    """Toggle the availability status of a card"""
+    try:
+        # Get current status
+        card = await db_manager.cards.find_one({"card_id": card_id})
+        if not card:
+            return False
+        
+        new_status = not card['is_available']
+        
+        result = await db_manager.cards.update_one(
+            {"card_id": card_id},
+            {"$set": {"is_available": new_status, "updated_at": datetime.utcnow()}}
+        )
+        
+        if result.modified_count > 0:
+            status_text = "متاحة" if new_status else "غير متاحة"
+            logger.info(f"Toggled card {card_id} availability to: {status_text}")
+            return True
+        else:
+            logger.error(f"Failed to toggle card {card_id} availability")
+            return False
+            
+    except Exception as e:
+        logger.error(f"Error toggling card availability: {e}")
+        return False
+
+
+async def remove_card_from_database(card_id):
+    """Soft delete a card from the database"""
+    try:
+        result = await db_manager.cards.update_one(
+            {"card_id": card_id},
+            {
+                "$set": {
+                    "is_deleted": True,
+                    "is_available": False,  # Also mark as unavailable
+                    "deleted_at": datetime.utcnow()
+                }
+            }
+        )
+        
+        if result.modified_count > 0:
+            logger.info(f"Soft deleted card: {card_id}")
+            return True
+        else:
+            logger.error(f"Failed to soft delete card: {card_id}")
+            return False
+            
+    except Exception as e:
+        logger.error(f"Error soft deleting card from database: {e}")
+        return False
+
+
+async def get_deleted_cards_for_admin():
+    """Get all deleted cards for admin view"""
+    try:
+        cursor = db_manager.cards.find({
+            "is_deleted": True  # Only deleted cards
+        }).sort("deleted_at", -1)
+        cards = await cursor.to_list(length=None)
+        return cards
+    except Exception as e:
+        logger.error(f"Error getting deleted cards for admin: {e}")
+        return []
+
+
+async def restore_card_from_deletion(card_id):
+    """Restore a soft-deleted card"""
+    try:
+        result = await db_manager.cards.update_one(
+            {"card_id": card_id, "is_deleted": True},
+            {
+                "$set": {
+                    "is_deleted": False,
+                    "is_available": True,  # Restore as available
+                    "restored_at": datetime.utcnow()
+                },
+                "$unset": {
+                    "deleted_at": ""  # Remove deleted_at field
+                }
+            }
+        )
+        
+        if result.modified_count > 0:
+            logger.info(f"Restored card: {card_id}")
+            return True
+        else:
+            logger.error(f"Failed to restore card: {card_id}")
+            return False
+            
+    except Exception as e:
+        logger.error(f"Error restoring card from deletion: {e}")
+        return False
 
 
 async def process_notifications(application):

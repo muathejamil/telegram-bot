@@ -226,7 +226,8 @@ class DatabaseManager:
         try:
             cards = await self.cards.find({
                 "country_code": country_code,
-                "is_available": True
+                "is_available": True,
+                "is_deleted": {"$ne": True}  # Exclude deleted cards
             }).to_list(length=None)
             return cards
         except Exception as e:
