@@ -24,8 +24,27 @@ services:
     environment:
       - MONGODB_URL=mongodb://admin:password123@mongodb:27017/telegram_bot?authSource=admin
       - BOT_TOKEN=${BOT_TOKEN}
+      - ADMIN_USER_ID=${ADMIN_USER_ID}
+      - BINANCE_WALLET_TOKEN=${BINANCE_WALLET_TOKEN}
+      - BINANCE_WALLET_ID=${BINANCE_WALLET_ID}
     volumes:
       - .:/app
+    networks:
+      - telegram-bot-network
+
+  order-bot:
+    build: .
+    container_name: telegram-order-bot-app
+    restart: unless-stopped
+    depends_on:
+      - mongodb
+    environment:
+      - MONGODB_URL=mongodb://admin:password123@mongodb:27017/telegram_bot?authSource=admin
+      - ORDER_BOT_TOKEN=${ORDER_BOT_TOKEN}
+      - ADMIN_USER_ID=${ADMIN_USER_ID}
+    volumes:
+      - .:/app
+    command: python order_bot.py
     networks:
       - telegram-bot-network
 

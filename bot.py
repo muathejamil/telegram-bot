@@ -5,6 +5,27 @@ from telegram import ForceReply, Update, InlineKeyboardButton, InlineKeyboardMar
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters, CallbackQueryHandler
 from dotenv import load_dotenv
 from database import db_manager
+from telegram.error import BadRequest
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+
+async def safe_edit_message(query, text, reply_markup=None, fallback_answer="تم التحديث ✅"):
+    """Safely edit a message, handling BadRequest errors for identical content"""
+    try:
+        await query.edit_message_text(text=text, reply_markup=reply_markup)
+    except BadRequest as e:
+        if "message is not modified" in str(e).lower():
+            # Message content is identical, just answer the callback
+            await query.answer(fallback_answer)
+        else:
+            # Re-raise other BadRequest errors
+            raise e
+    except Exception as e:
+        logging.error(f"Unexpected error editing message: {e}")
+        await query.answer("حدث خطأ، يرجى المحاولة مرة أخرى")
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -35,7 +56,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     ]
     
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text('مرحبًا! اختر خيارًا من القائمة:', reply_markup=reply_markup)
+    current_time = datetime.now().strftime('%H:%M')
+    menu_text = f"مرحبًا! اختر خيارًا من القائمة:\n\n🕐 آخر تحديث: {current_time}"
+    await update.message.reply_text(menu_text, reply_markup=reply_markup)
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle button callbacks from the inline keyboard"""
@@ -45,7 +68,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     
     # Check if user is blacklisted
     if await db_manager.is_blacklisted(user.id):
-        await query.edit_message_text(text='عذراً، لقد تم حظرك من استخدام هذا البوت.')
+        await safe_edit_message(query, 'عذراً، لقد تم حظرك من استخدام هذا البوت.')
         return
     
     # Handle different menu options
@@ -60,7 +83,12 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             [InlineKeyboardButton(" ❌القائمه السوداء", callback_data='blacklist')]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.edit_message_text(text="مرحبًا! اختر خيارًا من القائمة:", reply_markup=reply_markup)
+        
+        # Add timestamp to make the refresh meaningful and avoid identical content error
+        current_time = datetime.now().strftime('%H:%M')
+        menu_text = f"مرحبًا! اختر خيارًا من القائمة:\n\n🕐 آخر تحديث: {current_time}"
+        
+        await safe_edit_message(query, menu_text, reply_markup, "تم تحديث القائمة ✅")
         
     elif query.data == 'generateid':
         user_data = await db_manager.get_user(user.id)
@@ -70,40 +98,40 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         profile_text = f"""
-👨‍💼 الملف الشخصي
+                        👨‍💼 الملف الشخصي
 
-🆔 معرف المستخدم: {user.id}
-👤 الاسم: {user.first_name or 'غير محدد'}
-📧 اسم المستخدم: @{user.username or 'غير محدد'}
-💰 الرصيد: ${balance:.2f}
-📅 تاريخ التسجيل: {user_data.get('created_at', 'غير محدد') if user_data else 'غير محدد'}
+                        🆔 معرف المستخدم: {user.id}
+                        👤 الاسم: {user.first_name or 'غير محدد'}
+                        📧 اسم المستخدم: @{user.username or 'غير محدد'}
+                        💰 الرصيد: ${balance:.2f}
+                        📅 تاريخ التسجيل: {user_data.get('created_at', 'غير محدد') if user_data else 'غير محدد'}
         """
-        await query.edit_message_text(text=profile_text, reply_markup=reply_markup)
+        await safe_edit_message(query, profile_text, reply_markup)
         
     elif query.data == 'depositusdt':
         keyboard = [[InlineKeyboardButton("🔙 العودة للقائمة الرئيسية", callback_data='start')]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         deposit_text = f"""
-💸 إيداع USDT
+                        💸 إيداع USDT
 
-لإيداع USDT في حساب البوت، يرجى اتباع التعليمات التالية:
+                        لإيداع USDT في حساب البوت، يرجى اتباع التعليمات التالية:
 
-⚠️ تأكد من إرسال المعاملة من محفظة تدعم شبكة TRON (TRC20)
+                        ⚠️ تأكد من إرسال المعاملة من محفظة تدعم شبكة TRON (TRC20)
 
-1️⃣ أرسل المبلغ المطلوب إيداعه إلى العنوان التالي:
-📧 العنوان: {os.getenv('BINANCE_WALLET_TOKEN')}
+                        1️⃣ أرسل المبلغ المطلوب إيداعه إلى العنوان التالي:
+                        📧 العنوان: {os.getenv('BINANCE_WALLET_TOKEN')}
 
-ID BINANCE: {os.getenv('BINANCE_WALLET_ID')}
+                        ID BINANCE: {os.getenv('BINANCE_WALLET_ID')}
 
-Binance gift card (بطاقة بايننس)
-Itunes gift card (بطاقة إيتونس)
+                        Binance gift card (بطاقة بايننس)
+                        Itunes gift card (بطاقة إيتونس)
 
-2️⃣ أرسل صورة من إيصال التحويل مع معرف المستخدم الخاص بك
+                        2️⃣ أرسل صورة من إيصال التحويل مع معرف المستخدم الخاص بك
 
-3️⃣ انتظر التأكيد من الإدارة (عادة خلال 1 ساعة)
+                        3️⃣ انتظر التأكيد من الإدارة (عادة خلال 1 ساعة)
         """
-        await query.edit_message_text(text=deposit_text, reply_markup=reply_markup)
+        await safe_edit_message(query, deposit_text, reply_markup)
         
     elif query.data == 'cardlist':
         # Show available countries
@@ -136,19 +164,19 @@ Itunes gift card (بطاقة إيتونس)
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         help_text = """
-🤔 طريقة استخدام البوت
+                    🤔 طريقة استخدام البوت
 
-1️⃣ قم بإيداع USDT في حسابك ،ومشاركة وصل الدفع مع بوت الدعم
-2️⃣ تصفح قائمة البطاقات المتاحة
-3️⃣ اختر البطاقة المناسبة لك
-4️⃣ تأكد من وجود رصيد كافي
-5️⃣ اتبع التعليمات لإتمام الشراء
-6️⃣ استلم تفاصيل البطاقة
+                    1️⃣ قم بإيداع USDT في حسابك ،ومشاركة وصل الدفع مع بوت الدعم
+                    2️⃣ تصفح قائمة البطاقات المتاحة
+                    3️⃣ اختر البطاقة المناسبة لك
+                    4️⃣ تأكد من وجود رصيد كافي
+                    5️⃣ اتبع التعليمات لإتمام الشراء
+                    6️⃣ استلم تفاصيل البطاقة
 
-💡 نصائح مهمة:
-• تأكد من صحة البيانات قبل الشراء
-• احتفظ بتفاصيل البطاقة في مكان آمن
-• تواصل مع الدعم في حالة وجود مشاكل
+                    💡 نصائح مهمة:
+                    • تأكد من صحة البيانات قبل الشراء
+                    • احتفظ بتفاصيل البطاقة في مكان آمن
+                    • تواصل مع الدعم في حالة وجود مشاكل
         """
         await query.edit_message_text(text=help_text, reply_markup=reply_markup)
         
@@ -157,20 +185,20 @@ Itunes gift card (بطاقة إيتونس)
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         replace_text = """
-💳 شروط استبدال البطاقة
+                    💳 شروط استبدال البطاقة
 
-📋 الشروط العامة:
-• يجب الإبلاغ عن المشكلة خلال 24 ساعة من الشراء
-• تقديم دليل على عدم عمل البطاقة
-• عدم استخدام البطاقة بشكل خاطئ
+                    📋 الشروط العامة:
+                    • يجب الإبلاغ عن المشكلة خلال 24 ساعة من الشراء
+                    • تقديم دليل على عدم عمل البطاقة
+                    • عدم استخدام البطاقة بشكل خاطئ
 
-🔄 عملية الاستبدال:
-1️⃣ تواصل مع الدعم الفني
-2️⃣ قدم تفاصيل المشكلة
-3️⃣ أرسل صورة من محاولة الاستخدام
-4️⃣ انتظر المراجعة والموافقة
+                    🔄 عملية الاستبدال:
+                    1️⃣ تواصل مع الدعم الفني
+                    2️⃣ قدم تفاصيل المشكلة
+                    3️⃣ أرسل صورة من محاولة الاستخدام
+                    4️⃣ انتظر المراجعة والموافقة
 
-⏰ مدة المعالجة: 24-48 ساعة
+                    ⏰ مدة المعالجة: 24-48 ساعة
         """
         await query.edit_message_text(text=replace_text, reply_markup=reply_markup)
         
@@ -223,14 +251,19 @@ Itunes gift card (بطاقة إيتونس)
     
     # Handle card selection
     elif query.data.startswith('card_'):
-        card_id = query.data.split('_')[1]
+        logger.info(f"data: {query.data}")
+        # Remove 'card_' prefix to get the full card_id
+        card_id = query.data[5:]  # Remove 'card_' (5 characters)
+        logger.info(f"card_id: {card_id}")
         card = await db_manager.get_card(card_id)
-        
+        logger.info(f"Card: {card}")
         if card and card.get('is_available', False):
+            
+
             # Check user balance
             user_balance = await db_manager.get_user_balance(user.id)
             
-            if user_balance >= card['price']:
+            if user_balance > card['price']:
                 keyboard = [
                     [InlineKeyboardButton("✅ نعم، أريد الشراء", callback_data=f"confirm_{card_id}")],
                     [InlineKeyboardButton("❌ لا، إلغاء", callback_data=f"country_{card['country_code']}")],
@@ -239,15 +272,15 @@ Itunes gift card (بطاقة إيتونس)
                 reply_markup = InlineKeyboardMarkup(keyboard)
                 
                 confirmation_text = f"""
-🛒 تأكيد الطلب
+                                        🛒 تأكيد الطلب
 
-📋 تفاصيل البطاقة:
-🏷️ النوع: {card['card_type']}
-🌍 الدولة: {card.get('country_name', 'غير محدد')}
-💰 السعر: {card['price']} USDT
-💳 رصيدك الحالي: {user_balance:.2f} USDT
+                                        📋 تفاصيل البطاقة:
+                                        🏷️ النوع: {card['card_type']}
+                                        🌍 الدولة: {card.get('country_name', 'غير محدد')}
+                                        💰 السعر: {card['price']} USDT
+                                        💳 رصيدك الحالي: {user_balance:.2f} USDT
 
-❓ هل أنت متأكد من أنك تريد شراء هذه البطاقة؟
+                                        ❓ هل أنت متأكد من أنك تريد شراء هذه البطاقة؟
                 """
                 
                 await query.edit_message_text(text=confirmation_text, reply_markup=reply_markup)
@@ -260,13 +293,13 @@ Itunes gift card (بطاقة إيتونس)
                 reply_markup = InlineKeyboardMarkup(keyboard)
                 
                 insufficient_text = f"""
-⚠️ رصيد غير كافي
+                                        ⚠️ رصيد غير كافي
 
-💰 سعر البطاقة: {card['price']} USDT
-💳 رصيدك الحالي: {user_balance:.2f} USDT
-📉 تحتاج إلى: {card['price'] - user_balance:.2f} USDT إضافية
+                                        💰 سعر البطاقة: {card['price']} USDT
+                                        💳 رصيدك الحالي: {user_balance:.2f} USDT
+                                        📉 تحتاج إلى: {card['price'] - user_balance:.2f} USDT إضافية
 
-يرجى إيداع المبلغ المطلوب أولاً.
+                                        يرجى إيداع المبلغ المطلوب أولاً.
                 """
                 
                 await query.edit_message_text(text=insufficient_text, reply_markup=reply_markup)
@@ -277,13 +310,14 @@ Itunes gift card (بطاقة إيتونس)
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
             await query.edit_message_text(
-                text="😔 رصيدك غير كافي",
+                text="😔 لا توجد بطاقات متاحة حالياً",
                 reply_markup=reply_markup
             )
     
     # Handle order confirmation
     elif query.data.startswith('confirm_'):
-        card_id = query.data.split('_')[1]
+        # Remove 'confirm_' prefix to get the full card_id
+        card_id = query.data[8:]  # Remove 'confirm_' (8 characters)
         card = await db_manager.get_card(card_id)
         
         if card and card.get('is_available', False):
@@ -314,22 +348,22 @@ Itunes gift card (بطاقة إيتونس)
                         description=f"شراء بطاقة {card['card_type']}"
                     )
                     
-                    # Send notification to admin
-                    await send_admin_notification(context, user, card, order_id)
+                    # Create notification for order bot to process
+                    await create_order_notification(user, card, order_id)
                     
                     keyboard = [[InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data='start')]]
                     reply_markup = InlineKeyboardMarkup(keyboard)
                     
                     success_text = f"""
-✅ تم إنشاء الطلب بنجاح!
+                            ✅ تم إنشاء الطلب بنجاح!
 
-🆔 رقم الطلب: {order_id}
-🏷️ نوع البطاقة: {card['card_type']}
-💰 المبلغ المدفوع: {card['price']} USDT
+                            🆔 رقم الطلب: {order_id}
+                            🏷️ نوع البطاقة: {card['card_type']}
+                            💰 المبلغ المدفوع: {card['price']} USDT
 
-📨 تم إرسال إشعار للإدارة وسيتم إرسال تفاصيل البطاقة قريباً.
+                            📨 تم إرسال إشعار للإدارة وسيتم إرسال تفاصيل البطاقة قريباً.
 
-⏰ وقت التسليم المتوقع: 5-30 دقيقة
+                            ⏰ وقت التسليم المتوقع: 5-30 دقيقة
                     """
                     
                     await query.edit_message_text(text=success_text, reply_markup=reply_markup)
@@ -358,42 +392,32 @@ Itunes gift card (بطاقة إيتونس)
                 reply_markup=reply_markup
             )
 
-async def send_admin_notification(context: ContextTypes.DEFAULT_TYPE, user, card, order_id):
-    """Send notification to admin about new order"""
+async def create_order_notification(user, card, order_id):
+    """Create a notification for the order bot to process"""
     try:
-        admin_id = os.getenv('ADMIN_USER_ID')
-        if not admin_id:
-            logging.warning("ADMIN_USER_ID not set in environment variables")
-            return
+        notification_data = {
+            "order_id": order_id,
+            "user": {
+                "id": user.id,
+                "first_name": user.first_name,
+                "username": user.username
+            },
+            "card": {
+                "card_type": card['card_type'],
+                "country_name": card.get('country_name', 'غير محدد'),
+                "price": card['price']
+            },
+            "timestamp": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        }
         
-        admin_id = int(admin_id)
-        
-        notification_text = f"""
-🔔 طلب جديد!
-
-👤 معلومات المستخدم:
-🆔 ID: {user.id}
-👤 الاسم: {user.first_name or 'غير محدد'}
-📧 اسم المستخدم: @{user.username or 'غير محدد'}
-
-🛒 تفاصيل الطلب:
-🆔 رقم الطلب: {order_id}
-🏷️ نوع البطاقة: {card['card_type']}
-🌍 الدولة: {card.get('country_name', 'غير محدد')}
-💰 المبلغ: {card['price']} USDT
-
-⏰ وقت الطلب: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-
-يرجى إرسال تفاصيل البطاقة للمستخدم.
-        """
-        
-        await context.bot.send_message(
-            chat_id=admin_id,
-            text=notification_text
-        )
-        
+        notification_id = await db_manager.create_notification("new_order", notification_data)
+        if notification_id:
+            logging.info(f"Created notification {notification_id} for order {order_id}")
+        else:
+            logging.error(f"Failed to create notification for order {order_id}")
+            
     except Exception as e:
-        logging.error(f"Error sending admin notification: {e}")
+        logging.error(f"Error creating order notification: {e}")
 
 async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Echo the user message."""

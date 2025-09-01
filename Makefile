@@ -8,6 +8,13 @@ install_requirements:
 run_bot:
 	python bot.py
 
+run_order_bot:
+	python order_bot.py
+
+run_both_bots:
+	python bot.py &
+	python order_bot.py
+
 # Docker commands
 docker-build:
 	docker-compose build

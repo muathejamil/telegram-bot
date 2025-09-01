@@ -8,6 +8,7 @@ db.createCollection('transactions');
 db.createCollection('blacklist');
 db.createCollection('countries');
 db.createCollection('orders');
+db.createCollection('notifications');
 
 // Create indexes for better performance
 db.users.createIndex({ "user_id": 1 }, { unique: true });
@@ -22,6 +23,10 @@ db.countries.createIndex({ "code": 1 }, { unique: true });
 db.orders.createIndex({ "user_id": 1 });
 db.orders.createIndex({ "status": 1 });
 db.orders.createIndex({ "created_at": 1 });
+db.notifications.createIndex({ "notification_id": 1 }, { unique: true });
+db.notifications.createIndex({ "status": 1 });
+db.notifications.createIndex({ "type": 1 });
+db.notifications.createIndex({ "created_at": 1 });
 
 // Insert sample data
 db.users.insertMany([
@@ -126,4 +131,50 @@ db.cards.insertMany([
     }
 ]);
 
-print('Database initialized successfully!');
+// Insert sample notifications for testing
+db.notifications.insertMany([
+    {
+        notification_id: "notif_sample_1",
+        type: "new_order",
+        data: {
+            order_id: "order_sample_1",
+            user: {
+                id: 123456789,
+                first_name: "أحمد",
+                username: "ahmed_test"
+            },
+            card: {
+                card_type: "بطاقة فيزا أمريكية",
+                country_name: "الولايات المتحدة",
+                price: 25.0
+            },
+            timestamp: "2025-09-01 21:30:00"
+        },
+        status: "pending",
+        created_at: new Date(),
+        processed_at: null
+    },
+    {
+        notification_id: "notif_sample_2",
+        type: "new_order",
+        data: {
+            order_id: "order_sample_2",
+            user: {
+                id: 987654321,
+                first_name: "فاطمة",
+                username: "fatima_test"
+            },
+            card: {
+                card_type: "بطاقة ماستركارد بريطانية",
+                country_name: "المملكة المتحدة",
+                price: 50.0
+            },
+            timestamp: "2025-09-01 21:35:00"
+        },
+        status: "processed",
+        created_at: new Date(Date.now() - 300000), // 5 minutes ago
+        processed_at: new Date()
+    }
+]);
+
+print('Database initialized successfully with notifications collection!');

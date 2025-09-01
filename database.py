@@ -24,6 +24,7 @@ class DatabaseManager:
         self.blacklist: Optional[AsyncIOMotorCollection] = None
         self.countries: Optional[AsyncIOMotorCollection] = None
         self.orders: Optional[AsyncIOMotorCollection] = None
+        self.notifications: Optional[AsyncIOMotorCollection] = None
     
     async def connect(self, mongodb_url: str = None):
         """Connect to MongoDB database"""
@@ -41,6 +42,7 @@ class DatabaseManager:
             self.blacklist = self.db.blacklist
             self.countries = self.db.countries
             self.orders = self.db.orders
+            self.notifications = self.db.notifications
             
             # Test connection
             await self.client.admin.command('ping')
@@ -283,6 +285,82 @@ class DatabaseManager:
             return result.modified_count > 0
         except Exception as e:
             logger.error(f"Error updating order {order_id}: {e}")
+            return False
+    
+    async def get_pending_orders(self) -> List[Dict[str, Any]]:
+        """Get all pending orders"""
+        try:
+            cursor = self.orders.find({"status": "pending"}).sort("created_at", -1)
+            orders = await cursor.to_list(length=None)
+            return orders
+        except Exception as e:
+            logger.error(f"Error getting pending orders: {e}")
+            return []
+    
+    async def get_completed_orders(self, limit: int = 50) -> List[Dict[str, Any]]:
+        """Get completed orders"""
+        try:
+            cursor = self.orders.find({"status": "completed"}).sort("created_at", -1).limit(limit)
+            orders = await cursor.to_list(length=None)
+            return orders
+        except Exception as e:
+            logger.error(f"Error getting completed orders: {e}")
+            return []
+    
+    async def get_order_by_id(self, order_id: str) -> Optional[Dict[str, Any]]:
+        """Get order by ID"""
+        try:
+            order = await self.orders.find_one({"order_id": order_id})
+            return order
+        except Exception as e:
+            logger.error(f"Error getting order {order_id}: {e}")
+            return None
+    
+    async def create_notification(self, notification_type: str, data: Dict[str, Any]) -> str:
+        """Create a notification for the order bot to process"""
+        try:
+            notification_id = f"notif_{int(datetime.utcnow().timestamp() * 1000)}"
+            notification = {
+                "notification_id": notification_id,
+                "type": notification_type,
+                "data": data,
+                "status": "pending",
+                "created_at": datetime.utcnow(),
+                "processed_at": None
+            }
+            
+            await self.notifications.insert_one(notification)
+            logger.info(f"Created notification {notification_id} of type {notification_type}")
+            return notification_id
+        except Exception as e:
+            logger.error(f"Error creating notification: {e}")
+            return None
+    
+    async def get_pending_notifications(self) -> List[Dict[str, Any]]:
+        """Get all pending notifications"""
+        try:
+            cursor = self.notifications.find({"status": "pending"}).sort("created_at", 1)
+            notifications = await cursor.to_list(length=None)
+            return notifications
+        except Exception as e:
+            logger.error(f"Error getting pending notifications: {e}")
+            return []
+    
+    async def mark_notification_processed(self, notification_id: str) -> bool:
+        """Mark a notification as processed"""
+        try:
+            result = await self.notifications.update_one(
+                {"notification_id": notification_id},
+                {
+                    "$set": {
+                        "status": "processed",
+                        "processed_at": datetime.utcnow()
+                    }
+                }
+            )
+            return result.modified_count > 0
+        except Exception as e:
+            logger.error(f"Error marking notification {notification_id} as processed: {e}")
             return False
 
 # Global database instance
