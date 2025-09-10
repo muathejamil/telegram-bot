@@ -3,7 +3,7 @@ Database configuration and operations for the Telegram bot
 """
 import os
 import logging
-from datetime import datetime
+from datetime import datetime, UTC
 from typing import Optional, Dict, List, Any
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase, AsyncIOMotorCollection
 from pymongo.errors import DuplicateKeyError, PyMongoError
@@ -70,7 +70,7 @@ class DatabaseManager:
                 "first_name": first_name,
                 "last_name": last_name,
                 "balance": 0.0,
-                "created_at": datetime.utcnow(),
+                "created_at": datetime.now(UTC),
                 "is_active": True
             }
             await self.users.insert_one(user_data)
@@ -137,7 +137,7 @@ class DatabaseManager:
                     "$set": {
                         "is_available": False,
                         "reserved_by": user_id,
-                        "reserved_at": datetime.utcnow()
+                        "reserved_at": datetime.now(UTC)
                     }
                 }
             )
@@ -155,7 +155,7 @@ class DatabaseManager:
                 "type": transaction_type,  # 'deposit', 'withdrawal', 'card_purchase'
                 "amount": amount,
                 "description": description,
-                "timestamp": datetime.utcnow(),
+                "timestamp": datetime.now(UTC),
                 "status": "completed"
             }
             await self.transactions.insert_one(transaction_data)
@@ -183,7 +183,7 @@ class DatabaseManager:
             blacklist_data = {
                 "user_id": user_id,
                 "reason": reason,
-                "added_at": datetime.utcnow()
+                "added_at": datetime.now(UTC)
             }
             await self.blacklist.insert_one(blacklist_data)
             logger.info(f"Added user {user_id} to blacklist")
@@ -314,8 +314,8 @@ class DatabaseManager:
                 "country_code": country_code,
                 "amount": amount,
                 "status": "pending",  # pending, confirmed, completed, cancelled
-                "created_at": datetime.utcnow(),
-                "updated_at": datetime.utcnow()
+                "created_at": datetime.now(UTC),
+                "updated_at": datetime.now(UTC)
             }
             
             await self.orders.insert_one(order_data)
@@ -344,7 +344,7 @@ class DatabaseManager:
                 {
                     "$set": {
                         "status": status,
-                        "updated_at": datetime.utcnow()
+                        "updated_at": datetime.now(UTC)
                     }
                 }
             )
@@ -385,13 +385,13 @@ class DatabaseManager:
     async def create_notification(self, notification_type: str, data: Dict[str, Any]) -> str:
         """Create a notification for the order bot to process"""
         try:
-            notification_id = f"notif_{int(datetime.utcnow().timestamp() * 1000)}"
+            notification_id = f"notif_{int(datetime.now(UTC).timestamp() * 1000)}"
             notification = {
                 "notification_id": notification_id,
                 "type": notification_type,
                 "data": data,
                 "status": "pending",
-                "created_at": datetime.utcnow(),
+                "created_at": datetime.now(UTC),
                 "processed_at": None
             }
             
@@ -420,7 +420,7 @@ class DatabaseManager:
                 {
                     "$set": {
                         "status": "processed",
-                        "processed_at": datetime.utcnow()
+                        "processed_at": datetime.now(UTC)
                     }
                 }
             )
@@ -434,15 +434,15 @@ class DatabaseManager:
         """Create a new black website"""
         try:
             website_data = {
-                "website_id": f"bw_{int(datetime.utcnow().timestamp())}",
+                "website_id": f"bw_{int(datetime.now(UTC).timestamp())}",
                 "name": name,
                 "url": url,
                 "price": price,
                 "description": description,
                 "is_available": True,
                 "is_deleted": False,
-                "created_at": datetime.utcnow(),
-                "updated_at": datetime.utcnow()
+                "created_at": datetime.now(UTC),
+                "updated_at": datetime.now(UTC)
             }
             result = await self.black_websites.insert_one(website_data)
             logger.info(f"Created black website: {name}")
@@ -488,7 +488,7 @@ class DatabaseManager:
     async def update_black_website(self, website_id: str, name: str = None, url: str = None, price: float = None, description: str = None) -> bool:
         """Update black website details"""
         try:
-            update_data = {"updated_at": datetime.utcnow()}
+            update_data = {"updated_at": datetime.now(UTC)}
             if name is not None:
                 update_data["name"] = name
             if url is not None:
@@ -516,7 +516,7 @@ class DatabaseManager:
                     "$set": {
                         "is_deleted": True,
                         "is_available": False,
-                        "updated_at": datetime.utcnow()
+                        "updated_at": datetime.now(UTC)
                     }
                 }
             )
@@ -534,8 +534,8 @@ class DatabaseManager:
                     "$set": {
                         "is_available": True,
                         "purchased_by": user_id,
-                        "purchased_at": datetime.utcnow(),
-                        "updated_at": datetime.utcnow()
+                        "purchased_at": datetime.now(UTC),
+                        "updated_at": datetime.now(UTC)
                     }
                 }
             )

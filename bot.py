@@ -3,7 +3,7 @@ import logging
 import asyncio
 import base64
 import io
-from datetime import datetime
+from datetime import datetime, UTC
 from telegram import ForceReply, Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters, CallbackQueryHandler
 from dotenv import load_dotenv
@@ -658,6 +658,8 @@ async def handle_card_delivery(application, notification):
         
         if not user_id or not card_details:
             logger.error(f"Invalid card delivery notification data: {data}")
+            # Mark invalid notifications as processed to avoid infinite retry
+            await db_manager.mark_notification_processed(notification['notification_id'])
             return
         
         # Format card details message
@@ -689,6 +691,11 @@ async def handle_card_delivery(application, notification):
         
     except Exception as e:
         logger.error(f"Error handling card delivery notification {notification.get('notification_id')}: {e}")
+        # For certain errors (like user blocked bot), mark as processed to avoid infinite retry
+        error_str = str(e).lower()
+        if any(phrase in error_str for phrase in ['blocked', 'not found', 'forbidden', 'chat not found']):
+            logger.warning(f"User {user_id} appears to have blocked the bot or chat not found. Marking notification as processed.")
+            await db_manager.mark_notification_processed(notification['notification_id'])
 
 
 async def handle_card_image_delivery(application, notification):
@@ -701,6 +708,8 @@ async def handle_card_image_delivery(application, notification):
         
         if not user_id or not image_data_base64:
             logger.error(f"Invalid card image delivery notification data: {data}")
+            # Mark invalid notifications as processed to avoid infinite retry
+            await db_manager.mark_notification_processed(notification['notification_id'])
             return
         
         # Decode base64 image data
@@ -734,6 +743,11 @@ async def handle_card_image_delivery(application, notification):
         
     except Exception as e:
         logger.error(f"Error handling card image delivery notification {notification.get('notification_id')}: {e}")
+        # For certain errors (like user blocked bot), mark as processed to avoid infinite retry
+        error_str = str(e).lower()
+        if any(phrase in error_str for phrase in ['blocked', 'not found', 'forbidden', 'chat not found']):
+            logger.warning(f"User {user_id} appears to have blocked the bot or chat not found. Marking notification as processed.")
+            await db_manager.mark_notification_processed(notification['notification_id'])
 
 
 async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

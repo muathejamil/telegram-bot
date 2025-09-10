@@ -2,7 +2,7 @@ import os
 import logging
 import asyncio
 import base64
-from datetime import datetime
+from datetime import datetime, UTC
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters, CallbackQueryHandler
 from dotenv import load_dotenv
@@ -102,7 +102,7 @@ async def order_button_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                 username = user_info.get('username', 'غير محدد') if user_info else 'غير محدد'
                 
                 # Format order creation time
-                created_at = order.get('created_at', datetime.utcnow())
+                created_at = order.get('created_at', datetime.now(UTC))
                 if isinstance(created_at, datetime):
                     time_str = created_at.strftime('%m-%d %H:%M')
                 else:
@@ -235,7 +235,7 @@ async def order_button_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             first_name = user_info.get('first_name', 'غير محدد') if user_info else 'غير محدد'
             
             # Format timestamps
-            created_at = order.get('created_at', datetime.utcnow())
+            created_at = order.get('created_at', datetime.now(UTC))
             if isinstance(created_at, datetime):
                 created_str = created_at.strftime('%Y-%m-%d %H:%M:%S')
             else:
@@ -901,7 +901,7 @@ async def order_button_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             first_name = user_info.get('first_name', 'غير محدد')
             last_name = user_info.get('last_name', 'غير محدد')
             balance = user_info.get('balance', 0.0)
-            created_at = user_info.get('created_at', datetime.utcnow())
+            created_at = user_info.get('created_at', datetime.now(UTC))
             
             if isinstance(created_at, datetime):
                 created_str = created_at.strftime('%Y-%m-%d %H:%M:%S')
@@ -1041,7 +1041,7 @@ async def order_button_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                 trans_type = trans.get('type', 'غير محدد')
                 amount = trans.get('amount', 0.0)
                 description = trans.get('description', 'غير محدد')
-                created_at = trans.get('created_at', datetime.utcnow())
+                created_at = trans.get('created_at', datetime.now(UTC))
                 
                 if isinstance(created_at, datetime):
                     date_str = created_at.strftime('%m-%d %H:%M')
@@ -1273,8 +1273,8 @@ async def handle_card_image_upload(update: Update, context: ContextTypes.DEFAULT
         # Update order status
         await db_manager.update_order_status(order_id, 'completed')
         
-        # Clear user context
-        context.user_data.clear()
+        # Clear only the specific context key we used
+        context.user_data.pop('awaiting_card_image', None)
         
         # keyboard = [[InlineKeyboardButton("🏠 العودة للقائمة الرئيسية", callback_data='start')]]
         keyboard = []
@@ -1365,31 +1365,17 @@ async def handle_card_addition_text(update: Update, context: ContextTypes.DEFAUL
             try:
                 price = float(text)
                 context.user_data['price'] = price
-                context.user_data['card_step'] = 'value'
+                context.user_data['value'] = price  # Set value equal to price
+                context.user_data['card_step'] = 'quantity'  # Skip directly to quantity
                 
                 keyboard = [[InlineKeyboardButton("❌ إلغاء", callback_data='manage_cards')]]
                 reply_markup = InlineKeyboardMarkup(keyboard)
                 await update.message.reply_text(
-                    f"✅ السعر: ${price}\n\n4️⃣ يرجى إدخال قيمة البطاقة (مثال: 25.00):",
+                    f"✅ السعر: ${price}\n\n4️⃣ يرجى إدخال عدد البطاقات المطلوب إنشاؤها (مثال: 5):",
                     reply_markup=reply_markup
                 )
             except ValueError:
                 await update.message.reply_text("❌ يرجى إدخال رقم صحيح للسعر (مثال: 25.00)")
-        
-        elif step == 'value':
-            try:
-                value = float(text)
-                context.user_data['value'] = value
-                context.user_data['card_step'] = 'quantity'
-                
-                keyboard = [[InlineKeyboardButton("❌ إلغاء", callback_data='manage_cards')]]
-                reply_markup = InlineKeyboardMarkup(keyboard)
-                await update.message.reply_text(
-                    f"✅ قيمة البطاقة: ${value}\n\n5️⃣ يرجى إدخال عدد البطاقات المطلوب إنشاؤها (مثال: 5):",
-                    reply_markup=reply_markup
-                )
-            except ValueError:
-                await update.message.reply_text("❌ يرجى إدخال رقم صحيح للقيمة (مثال: 25.00)")
         
         elif step == 'quantity':
             try:
@@ -1408,14 +1394,15 @@ async def handle_card_addition_text(update: Update, context: ContextTypes.DEFAUL
                     'currency': 'USD',
                     'is_available': True,
                     'is_deleted': False,
-                    'created_at': datetime.utcnow()
+                    'created_at': datetime.now(UTC)
                 }
                 
                 # Add multiple cards to database
                 success_count = await add_bulk_cards_to_database(card_base_data, quantity)
                 
-                # Clear user context
-                context.user_data.clear()
+                # Clear card addition context
+                for key in ['adding_card', 'card_step', 'card_type', 'country_code', 'country_name', 'price', 'value']:
+                    context.user_data.pop(key, None)
                 
                 if success_count > 0:
                     keyboard = [[InlineKeyboardButton("🔙 العودة لإدارة البطاقات", callback_data='manage_cards')]]
@@ -1449,7 +1436,9 @@ async def handle_card_addition_text(update: Update, context: ContextTypes.DEFAUL
     
     except Exception as e:
         logger.error(f"Error handling card addition: {e}")
-        context.user_data.clear()
+        # Clear card addition context on error
+        for key in ['adding_card', 'card_step', 'card_type', 'country_code', 'country_name', 'price', 'value']:
+            context.user_data.pop(key, None)
         await update.message.reply_text("❌ حدث خطأ. يرجى المحاولة مرة أخرى.")
 
 
@@ -1627,22 +1616,56 @@ async def add_bulk_cards_to_database(card_base_data, quantity):
         # First, ensure the country exists in the countries collection
         await ensure_country_exists(card_base_data['country_code'], card_base_data['country_name'])
         
+        # Find the highest existing card number for this card type
+        base_pattern = f"{card_base_data['country_code']}_{card_base_data['card_type'].replace(' ', '_')}_{int(card_base_data['value'])}"
+        
+        # Find existing cards with this pattern
+        existing_cards = await db_manager.cards.find({
+            "card_id": {"$regex": f"^{base_pattern}_\\d+$"}
+        }).to_list(None)
+        
+        # Extract numbers from existing card IDs to find the next available number
+        existing_numbers = []
+        for card in existing_cards:
+            card_id = card.get('card_id', '')
+            if card_id.startswith(base_pattern + '_'):
+                try:
+                    number_part = card_id.split('_')[-1]
+                    existing_numbers.append(int(number_part))
+                except (ValueError, IndexError):
+                    continue
+        
+        # Find the next available starting number
+        start_number = 1
+        if existing_numbers:
+            start_number = max(existing_numbers) + 1
+        
         success_count = 0
         
         for i in range(quantity):
             # Create unique card ID for each card
             card_data = card_base_data.copy()
-            card_id = f"{card_data['country_code']}_{card_data['card_type'].replace(' ', '_')}_{int(card_data['value'])}_{i+1:03d}"
+            card_number = start_number + i
+            card_id = f"{base_pattern}_{card_number:03d}"
             card_data['card_id'] = card_id
             
-            # Insert card into database
-            result = await db_manager.cards.insert_one(card_data)
-            
-            if result.inserted_id:
-                success_count += 1
-                logger.info(f"Added bulk card {i+1}/{quantity}: {card_id}")
-            else:
-                logger.error(f"Failed to add bulk card {i+1}/{quantity}: {card_id}")
+            try:
+                # Insert card into database
+                result = await db_manager.cards.insert_one(card_data)
+                
+                if result.inserted_id:
+                    success_count += 1
+                    logger.info(f"Added bulk card {i+1}/{quantity}: {card_id}")
+                else:
+                    logger.error(f"Failed to add bulk card {i+1}/{quantity}: {card_id}")
+            except Exception as insert_error:
+                # Handle duplicate key errors gracefully
+                if "E11000" in str(insert_error) or "duplicate key" in str(insert_error):
+                    logger.warning(f"Card {card_id} already exists, skipping...")
+                    continue
+                else:
+                    logger.error(f"Error inserting card {card_id}: {insert_error}")
+                    continue
         
         logger.info(f"Successfully added {success_count}/{quantity} cards")
         return success_count
@@ -1669,7 +1692,7 @@ async def ensure_country_exists(country_code, country_name):
                 "name": country_name,
                 "flag": flag,
                 "is_active": True,
-                "created_at": datetime.utcnow()
+                "created_at": datetime.now(UTC)
             }
             
             result = await db_manager.countries.insert_one(country_data)
@@ -1699,7 +1722,7 @@ async def update_card_field(card_id, field, value):
     try:
         result = await db_manager.cards.update_one(
             {"card_id": card_id},
-            {"$set": {field: value, "updated_at": datetime.utcnow()}}
+            {"$set": {field: value, "updated_at": datetime.now(UTC)}}
         )
         
         if result.modified_count > 0:
@@ -1726,7 +1749,7 @@ async def toggle_card_availability(card_id):
         
         result = await db_manager.cards.update_one(
             {"card_id": card_id},
-            {"$set": {"is_available": new_status, "updated_at": datetime.utcnow()}}
+            {"$set": {"is_available": new_status, "updated_at": datetime.now(UTC)}}
         )
         
         if result.modified_count > 0:
@@ -1751,7 +1774,7 @@ async def remove_card_from_database(card_id):
                 "$set": {
                     "is_deleted": True,
                     "is_available": False,  # Also mark as unavailable
-                    "deleted_at": datetime.utcnow()
+                    "deleted_at": datetime.now(UTC)
                 }
             }
         )
@@ -1790,7 +1813,7 @@ async def restore_card_from_deletion(card_id):
                 "$set": {
                     "is_deleted": False,
                     "is_available": True,  # Restore as available
-                    "restored_at": datetime.utcnow()
+                    "restored_at": datetime.now(UTC)
                 },
                 "$unset": {
                     "deleted_at": ""  # Remove deleted_at field
@@ -1973,7 +1996,7 @@ async def complete_order(order_id):
             {
                 "$set": {
                     "status": "completed",
-                    "completed_at": datetime.utcnow()
+                    "completed_at": datetime.now(UTC)
                 }
             }
         )
@@ -2010,7 +2033,7 @@ async def cancel_order(order_id):
             {
                 "$set": {
                     "status": "cancelled",
-                    "cancelled_at": datetime.utcnow()
+                    "cancelled_at": datetime.now(UTC)
                 }
             }
         )
