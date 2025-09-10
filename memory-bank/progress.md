@@ -11,6 +11,7 @@
 - **Purchase Flow**: Complete purchase process with balance validation
 - **Order Creation**: Order tracking with unique IDs
 - **Admin Notifications**: Automatic notifications to admin on new orders
+- **Black Websites System**: Complete management and purchase system for black websites
 
 ### Database Operations
 - **MongoDB Integration**: Full async database operations via Motor

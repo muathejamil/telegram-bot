@@ -9,6 +9,7 @@ db.createCollection('blacklist');
 db.createCollection('countries');
 db.createCollection('orders');
 db.createCollection('notifications');
+db.createCollection('black_websites');
 
 // Create indexes for better performance
 db.users.createIndex({ "user_id": 1 }, { unique: true });
@@ -27,6 +28,10 @@ db.notifications.createIndex({ "notification_id": 1 }, { unique: true });
 db.notifications.createIndex({ "status": 1 });
 db.notifications.createIndex({ "type": 1 });
 db.notifications.createIndex({ "created_at": 1 });
+db.black_websites.createIndex({ "website_id": 1 }, { unique: true });
+db.black_websites.createIndex({ "is_available": 1 });
+db.black_websites.createIndex({ "is_deleted": 1 });
+db.black_websites.createIndex({ "name": 1 });
 
 // Insert sample data
 db.users.insertMany([
@@ -131,6 +136,43 @@ db.cards.insertMany([
     }
 ]);
 
+// Insert sample black websites
+db.black_websites.insertMany([
+    {
+        website_id: "bw_1",
+        name: "موقع التسوق الأسود",
+        url: "https://example-black-site1.com",
+        price: 15.0,
+        description: "موقع متخصص في بيع المنتجات الرقمية والخدمات الحصرية. يحتوي على مجموعة واسعة من الأدوات والبرامج المفيدة.",
+        is_available: true,
+        is_deleted: false,
+        created_at: new Date(),
+        updated_at: new Date()
+    },
+    {
+        website_id: "bw_2",
+        name: "موقع الخدمات المحظورة",
+        url: "https://example-black-site2.com",
+        price: 25.0,
+        description: "منصة تقدم خدمات حصرية ومتقدمة. يتطلب تسجيل دخول خاص ويحتوي على محتوى عالي الجودة.",
+        is_available: true,
+        is_deleted: false,
+        created_at: new Date(),
+        updated_at: new Date()
+    },
+    {
+        website_id: "bw_3",
+        name: "منصة التجارة السوداء",
+        url: "https://example-black-site3.com",
+        price: 35.0,
+        description: "موقع تجاري متقدم يوفر وصولاً إلى أسواق خاصة ومنتجات حصرية. يشمل دعم فني على مدار الساعة.",
+        is_available: true,
+        is_deleted: false,
+        created_at: new Date(),
+        updated_at: new Date()
+    }
+]);
+
 // Insert sample notifications for testing
 db.notifications.insertMany([
     {
@@ -177,4 +219,4 @@ db.notifications.insertMany([
     }
 ]);
 
-print('Database initialized successfully with notifications collection!');
+print('Database initialized successfully with notifications and black websites collections!');

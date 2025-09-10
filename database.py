@@ -25,6 +25,7 @@ class DatabaseManager:
         self.countries: Optional[AsyncIOMotorCollection] = None
         self.orders: Optional[AsyncIOMotorCollection] = None
         self.notifications: Optional[AsyncIOMotorCollection] = None
+        self.black_websites: Optional[AsyncIOMotorCollection] = None
     
     async def connect(self, mongodb_url: str = None):
         """Connect to MongoDB database"""
@@ -43,6 +44,7 @@ class DatabaseManager:
             self.countries = self.db.countries
             self.orders = self.db.orders
             self.notifications = self.db.notifications
+            self.black_websites = self.db.black_websites
             
             # Test connection
             await self.client.admin.command('ping')
@@ -425,6 +427,121 @@ class DatabaseManager:
             return result.modified_count > 0
         except Exception as e:
             logger.error(f"Error marking notification {notification_id} as processed: {e}")
+            return False
+    
+    # Black websites operations
+    async def create_black_website(self, name: str, url: str, price: float, description: str = "") -> bool:
+        """Create a new black website"""
+        try:
+            website_data = {
+                "website_id": f"bw_{int(datetime.utcnow().timestamp())}",
+                "name": name,
+                "url": url,
+                "price": price,
+                "description": description,
+                "is_available": True,
+                "is_deleted": False,
+                "created_at": datetime.utcnow(),
+                "updated_at": datetime.utcnow()
+            }
+            result = await self.black_websites.insert_one(website_data)
+            logger.info(f"Created black website: {name}")
+            return result.inserted_id is not None
+        except Exception as e:
+            logger.error(f"Error creating black website {name}: {e}")
+            return False
+    
+    async def get_available_black_websites(self) -> List[Dict[str, Any]]:
+        """Get all available black websites"""
+        try:
+            cursor = self.black_websites.find({
+                "is_available": True,
+                "is_deleted": {"$ne": True}
+            }).sort("name", 1)
+            websites = await cursor.to_list(length=None)
+            return websites
+        except Exception as e:
+            logger.error(f"Error getting available black websites: {e}")
+            return []
+    
+    async def get_all_black_websites(self) -> List[Dict[str, Any]]:
+        """Get all black websites for admin (excluding deleted)"""
+        try:
+            cursor = self.black_websites.find({
+                "is_deleted": {"$ne": True}
+            }).sort("created_at", -1)
+            websites = await cursor.to_list(length=None)
+            return websites
+        except Exception as e:
+            logger.error(f"Error getting all black websites: {e}")
+            return []
+    
+    async def get_black_website(self, website_id: str) -> Optional[Dict[str, Any]]:
+        """Get black website by ID"""
+        try:
+            website = await self.black_websites.find_one({"website_id": website_id})
+            return website
+        except Exception as e:
+            logger.error(f"Error getting black website {website_id}: {e}")
+            return None
+    
+    async def update_black_website(self, website_id: str, name: str = None, url: str = None, price: float = None, description: str = None) -> bool:
+        """Update black website details"""
+        try:
+            update_data = {"updated_at": datetime.utcnow()}
+            if name is not None:
+                update_data["name"] = name
+            if url is not None:
+                update_data["url"] = url
+            if price is not None:
+                update_data["price"] = price
+            if description is not None:
+                update_data["description"] = description
+            
+            result = await self.black_websites.update_one(
+                {"website_id": website_id},
+                {"$set": update_data}
+            )
+            return result.modified_count > 0
+        except Exception as e:
+            logger.error(f"Error updating black website {website_id}: {e}")
+            return False
+    
+    async def delete_black_website(self, website_id: str) -> bool:
+        """Soft delete black website"""
+        try:
+            result = await self.black_websites.update_one(
+                {"website_id": website_id},
+                {
+                    "$set": {
+                        "is_deleted": True,
+                        "is_available": False,
+                        "updated_at": datetime.utcnow()
+                    }
+                }
+            )
+            return result.modified_count > 0
+        except Exception as e:
+            logger.error(f"Error deleting black website {website_id}: {e}")
+            return False
+    
+    async def purchase_black_website(self, website_id: str, user_id: int) -> bool:
+        """Mark black website as purchased (unavailable)"""
+        try:
+            result = await self.black_websites.update_one(
+                {"website_id": website_id, "is_available": True},
+                {
+                    "$set": {
+                        "is_available": True,
+                        "purchased_by": user_id,
+                        "purchased_at": datetime.utcnow(),
+                        "updated_at": datetime.utcnow()
+                    }
+                }
+            )
+            return result.modified_count > 0
+        except Exception as e:
+            logger.error(f"Error purchasing black website {website_id}: {e}")
             return False
 
 # Global database instance

@@ -67,6 +67,7 @@ async def start_order_bot(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         [InlineKeyboardButton("📋 الطلبات المعلقة", callback_data='pending_orders')],
         [InlineKeyboardButton("✅ الطلبات المكتملة", callback_data='completed_orders')],
         [InlineKeyboardButton("💳 إدارة البطاقات", callback_data='manage_cards')],
+        [InlineKeyboardButton("🌐 إدارة المواقع السوداء", callback_data='manage_black_websites')],
         [InlineKeyboardButton("👥 إدارة المستخدمين", callback_data='manage_users')],
         [InlineKeyboardButton("📊 الإحصائيات", callback_data='statistics')]
     ]
@@ -168,6 +169,7 @@ async def order_button_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             [InlineKeyboardButton("📋 الطلبات المعلقة", callback_data='pending_orders')],
             [InlineKeyboardButton("✅ الطلبات المكتملة", callback_data='completed_orders')],
             [InlineKeyboardButton("💳 إدارة البطاقات", callback_data='manage_cards')],
+            [InlineKeyboardButton("🌐 إدارة المواقع السوداء", callback_data='manage_black_websites')],
             [InlineKeyboardButton("👥 إدارة المستخدمين", callback_data='manage_users')],
             [InlineKeyboardButton("📊 الإحصائيات", callback_data='statistics')]
         ]
@@ -521,6 +523,231 @@ async def order_button_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             keyboard = [[InlineKeyboardButton("🔙 العودة لإدارة البطاقات", callback_data='manage_cards')]]
             reply_markup = InlineKeyboardMarkup(keyboard)
             await safe_edit_message(query, "✅ لا توجد بطاقات محذوفة للاستعادة", reply_markup        )
+    
+    # Handle black websites management
+    elif query.data == 'manage_black_websites':
+        keyboard = [
+            [InlineKeyboardButton("➕ إضافة موقع", callback_data='add_black_website')],
+            [InlineKeyboardButton("📝 تعديل موقع", callback_data='edit_black_websites')],
+            [InlineKeyboardButton("🗑️ حذف موقع", callback_data='delete_black_websites')],
+            [InlineKeyboardButton("📋 عرض المواقع", callback_data='view_black_websites')],
+            [InlineKeyboardButton("🔙 العودة للقائمة الرئيسية", callback_data='start')]
+        ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await safe_edit_message(
+            query,
+            "🌐 إدارة المواقع السوداء\n\nاختر الإجراء المطلوب:",
+            reply_markup
+        )
+    
+    # Handle black websites actions
+    elif query.data == 'add_black_website':
+        # Start black website addition process
+        context.user_data['adding_black_website'] = True
+        context.user_data['black_website_step'] = 'url'
+        
+        keyboard = [[InlineKeyboardButton("❌ إلغاء", callback_data='manage_black_websites')]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await safe_edit_message(
+            query,
+            "➕ إضافة موقع جديد\n\n1️⃣ ادخل رابط الموقع:",
+            reply_markup
+        )
+    
+    elif query.data == 'view_black_websites':
+        # Show all black websites
+        websites = await get_all_black_websites_for_admin()
+        if websites:
+            websites_text = "📋 جميع المواقع السوداء:\n\n"
+            for website in websites[:10]:  # Show first 10 websites
+                status = "✅ متاح" if website.get('is_available') else "❌ غير متاح"
+                websites_text += f"🌐 {website['name']}\n"
+                websites_text += f"🔗 {website['url']}\n"
+                websites_text += f"💰 ${website['price']}\n"
+                websites_text += f"📊 {status}\n\n"
+            
+            keyboard = [[InlineKeyboardButton("🔙 العودة لإدارة المواقع", callback_data='manage_black_websites')]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await safe_edit_message(query, websites_text, reply_markup)
+        else:
+            keyboard = [[InlineKeyboardButton("🔙 العودة لإدارة المواقع", callback_data='manage_black_websites')]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await safe_edit_message(query, "📋 لا توجد مواقع في النظام حالياً", reply_markup)
+    
+    elif query.data == 'edit_black_websites':
+        # Show websites for editing
+        websites = await get_all_black_websites_for_admin()
+        if websites:
+            keyboard = []
+            for website in websites[:20]:  # Limit to 20 websites
+                status_icon = "✅" if website['is_available'] else "❌"
+                keyboard.append([InlineKeyboardButton(
+                    f"{status_icon} {website['name']} - ${website['price']}",
+                    callback_data=f"edit_website_{website['website_id']}"
+                )])
+            
+            keyboard.append([InlineKeyboardButton("🔙 العودة لإدارة المواقع", callback_data='manage_black_websites')])
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await safe_edit_message(
+                query,
+                "📝 تعديل المواقع\n\nاختر الموقع الذي تريد تعديله:",
+                reply_markup
+            )
+        else:
+            keyboard = [[InlineKeyboardButton("🔙 العودة لإدارة المواقع", callback_data='manage_black_websites')]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await safe_edit_message(query, "❌ لا توجد مواقع للتعديل", reply_markup)
+    
+    elif query.data == 'delete_black_websites':
+        # Show websites for deletion
+        websites = await get_all_black_websites_for_admin()
+        if websites:
+            keyboard = []
+            for website in websites[:20]:  # Limit to 20 websites
+                status_icon = "✅" if website['is_available'] else "❌"
+                keyboard.append([InlineKeyboardButton(
+                    f"{status_icon} {website['name']} - ${website['price']}",
+                    callback_data=f"delete_website_{website['website_id']}"
+                )])
+            
+            keyboard.append([InlineKeyboardButton("🔙 العودة لإدارة المواقع", callback_data='manage_black_websites')])
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await safe_edit_message(
+                query,
+                "🗑️ حذف المواقع\n\n⚠️ تحذير: سيتم حذف الموقع نهائياً!\nاختر الموقع الذي تريد حذفه:",
+                reply_markup
+            )
+        else:
+            keyboard = [[InlineKeyboardButton("🔙 العودة لإدارة المواقع", callback_data='manage_black_websites')]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await safe_edit_message(query, "❌ لا توجد مواقع للحذف", reply_markup)
+    
+    # Handle individual website actions
+    elif query.data.startswith('edit_website_'):
+        website_id = query.data[13:]  # Remove 'edit_website_' prefix
+        website = await db_manager.get_black_website(website_id)
+        
+        if website:
+            keyboard = [
+                [InlineKeyboardButton("📝 تعديل الاسم", callback_data=f"edit_website_name_{website_id}")],
+                [InlineKeyboardButton("🔗 تعديل الرابط", callback_data=f"edit_website_url_{website_id}")],
+                [InlineKeyboardButton("💰 تعديل السعر", callback_data=f"edit_website_price_{website_id}")],
+                [InlineKeyboardButton("📄 تعديل الوصف", callback_data=f"edit_website_desc_{website_id}")],
+                [InlineKeyboardButton("🔙 العودة", callback_data='edit_black_websites')]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            description = website.get('description', 'لا يوجد وصف')
+            await safe_edit_message(
+                query,
+                f"📝 تعديل الموقع: {website['name']}\n\n"
+                f"🔗 الرابط الحالي: {website['url']}\n"
+                f"💰 السعر الحالي: ${website['price']}\n"
+                f"📄 الوصف الحالي: {description}\n\n"
+                f"اختر ما تريد تعديله:",
+                reply_markup
+            )
+        else:
+            keyboard = [[InlineKeyboardButton("🔙 العودة", callback_data='edit_black_websites')]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await safe_edit_message(query, "❌ لم يتم العثور على الموقع", reply_markup)
+    
+    elif query.data.startswith('edit_website_name_'):
+        website_id = query.data[18:]  # Remove 'edit_website_name_' prefix
+        context.user_data['editing_black_website'] = True
+        context.user_data['editing_website_id'] = website_id
+        context.user_data['editing_field'] = 'name'
+        
+        keyboard = [[InlineKeyboardButton("❌ إلغاء", callback_data=f"edit_website_{website_id}")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await safe_edit_message(
+            query,
+            "📝 تعديل اسم الموقع\n\nادخل الاسم الجديد:",
+            reply_markup
+        )
+    
+    elif query.data.startswith('edit_website_url_'):
+        website_id = query.data[17:]  # Remove 'edit_website_url_' prefix
+        context.user_data['editing_black_website'] = True
+        context.user_data['editing_website_id'] = website_id
+        context.user_data['editing_field'] = 'url'
+        
+        keyboard = [[InlineKeyboardButton("❌ إلغاء", callback_data=f"edit_website_{website_id}")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await safe_edit_message(
+            query,
+            "🔗 تعديل رابط الموقع\n\nادخل الرابط الجديد:",
+            reply_markup
+        )
+    
+    elif query.data.startswith('edit_website_price_'):
+        website_id = query.data[19:]  # Remove 'edit_website_price_' prefix
+        context.user_data['editing_black_website'] = True
+        context.user_data['editing_website_id'] = website_id
+        context.user_data['editing_field'] = 'price'
+        
+        keyboard = [[InlineKeyboardButton("❌ إلغاء", callback_data=f"edit_website_{website_id}")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await safe_edit_message(
+            query,
+            "💰 تعديل سعر الموقع\n\nادخل السعر الجديد (بالدولار):",
+            reply_markup
+        )
+    
+    elif query.data.startswith('edit_website_desc_'):
+        website_id = query.data[18:]  # Remove 'edit_website_desc_' prefix
+        context.user_data['editing_black_website'] = True
+        context.user_data['editing_website_id'] = website_id
+        context.user_data['editing_field'] = 'description'
+        
+        keyboard = [[InlineKeyboardButton("❌ إلغاء", callback_data=f"edit_website_{website_id}")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await safe_edit_message(
+            query,
+            "📄 تعديل وصف الموقع\n\nادخل الوصف الجديد:",
+            reply_markup
+        )
+    
+    elif query.data.startswith('delete_website_'):
+        website_id = query.data[15:]  # Remove 'delete_website_' prefix
+        website = await db_manager.get_black_website(website_id)
+        
+        if website:
+            keyboard = [
+                [InlineKeyboardButton("✅ نعم، احذف الموقع", callback_data=f"confirm_delete_website_{website_id}")],
+                [InlineKeyboardButton("❌ إلغاء", callback_data='delete_black_websites')]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await safe_edit_message(
+                query,
+                f"⚠️ تأكيد حذف الموقع\n\n"
+                f"🌐 الموقع: {website['name']}\n"
+                f"🔗 الرابط: {website['url']}\n"
+                f"💰 السعر: ${website['price']}\n\n"
+                f"هل أنت متأكد من حذف هذا الموقع؟",
+                reply_markup
+            )
+        else:
+            keyboard = [[InlineKeyboardButton("🔙 العودة", callback_data='delete_black_websites')]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await safe_edit_message(query, "❌ لم يتم العثور على الموقع", reply_markup)
+    
+    elif query.data.startswith('confirm_delete_website_'):
+        website_id = query.data[23:]  # Remove 'confirm_delete_website_' prefix
+        success = await db_manager.delete_black_website(website_id)
+        
+        if success:
+            keyboard = [[InlineKeyboardButton("🔙 العودة لإدارة المواقع", callback_data='manage_black_websites')]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await safe_edit_message(query, "✅ تم حذف الموقع بنجاح!", reply_markup)
+        else:
+            keyboard = [[InlineKeyboardButton("🔙 العودة", callback_data='delete_black_websites')]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await safe_edit_message(query, "❌ حدث خطأ في حذف الموقع", reply_markup)
     
     # Handle user management
     elif query.data == 'manage_users':
@@ -1088,6 +1315,16 @@ async def handle_card_addition_text(update: Update, context: ContextTypes.DEFAUL
         await handle_balance_charging(update, context)
         return
     
+    # Handle black website addition
+    if context.user_data.get('adding_black_website'):
+        await handle_black_website_addition_text(update, context)
+        return
+    
+    # Handle black website editing
+    if context.user_data.get('editing_black_website'):
+        await handle_black_website_editing(update, context)
+        return
+    
     # Check if we're adding a card
     if not context.user_data.get('adding_card'):
         return
@@ -1571,6 +1808,160 @@ async def restore_card_from_deletion(card_id):
     except Exception as e:
         logger.error(f"Error restoring card from deletion: {e}")
         return False
+
+
+# Black websites management functions
+async def get_all_black_websites_for_admin():
+    """Get all black websites for admin view"""
+    try:
+        websites = await db_manager.get_all_black_websites()
+        return websites
+    except Exception as e:
+        logger.error(f"Error getting black websites for admin: {e}")
+        return []
+
+
+async def handle_black_website_addition_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle text input for adding new black websites"""
+    user = update.effective_user
+    
+    # Check if user is admin
+    admin_id = os.getenv('ADMIN_USER_ID')
+    if not admin_id or str(user.id) != admin_id:
+        return
+    
+    # Check if we're adding a black website
+    if not context.user_data.get('adding_black_website'):
+        return
+    
+    step = context.user_data.get('black_website_step')
+    text = update.message.text
+    
+    try:
+        if step == 'url':
+            context.user_data['website_url'] = text
+            context.user_data['black_website_step'] = 'name'
+            
+            keyboard = [[InlineKeyboardButton("❌ إلغاء", callback_data='manage_black_websites')]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await update.message.reply_text(
+                f"✅ رابط الموقع: {text}\n\n2️⃣ ادخل اسم الموقع:",
+                reply_markup=reply_markup
+            )
+        
+        elif step == 'name':
+            context.user_data['website_name'] = text
+            context.user_data['black_website_step'] = 'price'
+            
+            keyboard = [[InlineKeyboardButton("❌ إلغاء", callback_data='manage_black_websites')]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await update.message.reply_text(
+                f"✅ اسم الموقع: {text}\n\n3️⃣ ادخل سعر الشراء (بالدولار):",
+                reply_markup=reply_markup
+            )
+        
+        elif step == 'price':
+            try:
+                price = float(text)
+                context.user_data['website_price'] = price
+                context.user_data['black_website_step'] = 'description'
+                
+                keyboard = [[InlineKeyboardButton("❌ إلغاء", callback_data='manage_black_websites')]]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                await update.message.reply_text(
+                    f"✅ السعر: ${price}\n\n4️⃣ ادخل وصف الموقع (سيتم إرساله مع الرابط للعميل):",
+                    reply_markup=reply_markup
+                )
+            except ValueError:
+                await update.message.reply_text("❌ يرجى إدخال رقم صحيح للسعر (مثال: 25.00)")
+        
+        elif step == 'description':
+            # Create the black website
+            success = await db_manager.create_black_website(
+                name=context.user_data['website_name'],
+                url=context.user_data['website_url'],
+                price=context.user_data['website_price'],
+                description=text
+            )
+            
+            if success:
+                keyboard = [[InlineKeyboardButton("🔙 العودة لإدارة المواقع", callback_data='manage_black_websites')]]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                await update.message.reply_text(
+                    f"✅ تم إضافة الموقع بنجاح!\n\n"
+                    f"🌐 الاسم: {context.user_data['website_name']}\n"
+                    f"🔗 الرابط: {context.user_data['website_url']}\n"
+                    f"💰 السعر: ${context.user_data['website_price']}\n"
+                    f"📝 الوصف: {text}",
+                    reply_markup=reply_markup
+                )
+            else:
+                await update.message.reply_text("❌ حدث خطأ في إضافة الموقع. يرجى المحاولة مرة أخرى.")
+            
+            # Clear user data
+            context.user_data.pop('adding_black_website', None)
+            context.user_data.pop('black_website_step', None)
+            context.user_data.pop('website_name', None)
+            context.user_data.pop('website_url', None)
+            context.user_data.pop('website_price', None)
+        
+    except Exception as e:
+        logger.error(f"Error in black website addition: {e}")
+        await update.message.reply_text("❌ حدث خطأ. يرجى المحاولة مرة أخرى.")
+
+
+async def handle_black_website_editing(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle text input for editing black websites"""
+    user = update.effective_user
+    
+    # Check if user is admin
+    admin_id = os.getenv('ADMIN_USER_ID')
+    if not admin_id or str(user.id) != admin_id:
+        return
+    
+    # Check if we're editing a black website
+    if not context.user_data.get('editing_black_website'):
+        return
+    
+    website_id = context.user_data.get('editing_website_id')
+    field = context.user_data.get('editing_field')
+    text = update.message.text
+    
+    try:
+        if field == 'name':
+            success = await db_manager.update_black_website(website_id, name=text)
+        elif field == 'url':
+            success = await db_manager.update_black_website(website_id, url=text)
+        elif field == 'price':
+            try:
+                price = float(text)
+                success = await db_manager.update_black_website(website_id, price=price)
+            except ValueError:
+                await update.message.reply_text("❌ يرجى إدخال رقم صحيح للسعر")
+                return
+        elif field == 'description':
+            success = await db_manager.update_black_website(website_id, description=text)
+        else:
+            success = False
+        
+        if success:
+            keyboard = [[InlineKeyboardButton("🔙 العودة لإدارة المواقع", callback_data='manage_black_websites')]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await update.message.reply_text(
+                f"✅ تم تحديث {field} بنجاح!",
+                reply_markup=reply_markup
+            )
+        else:
+            await update.message.reply_text("❌ حدث خطأ في التحديث. يرجى المحاولة مرة أخرى.")
+        
+        # Clear editing state
+        context.user_data.pop('editing_black_website', None)
+        context.user_data.pop('editing_website_id', None)
+        context.user_data.pop('editing_field', None)
+        
+    except Exception as e:
+        logger.error(f"Error in black website editing: {e}")
+        await update.message.reply_text("❌ حدث خطأ. يرجى المحاولة مرة أخرى.")
 
 
 async def complete_order(order_id):

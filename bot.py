@@ -206,14 +206,26 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await query.edit_message_text(text=replace_text, reply_markup=reply_markup)
         
     elif query.data == 'blacklist':
-        keyboard = [[InlineKeyboardButton("🔙 العودة للقائمة الرئيسية", callback_data='start')]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
+        # Show available black websites for purchase
+        websites = await db_manager.get_available_black_websites()
         
-        blacklist_text = """
-❌ مواقع جاهزه للتفريغ
-
-        """
-        await query.edit_message_text(text=blacklist_text, reply_markup=reply_markup)
+        if websites:
+            keyboard = []
+            for website in websites:
+                keyboard.append([InlineKeyboardButton(
+                    f"🌐 {website['name']} - ${website['price']}",
+                    callback_data=f"buy_website_{website['website_id']}"
+                )])
+            
+            keyboard.append([InlineKeyboardButton("🔙 العودة للقائمة الرئيسية", callback_data='start')])
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            websites_text = "🌐 المواقع السوداء المتاحة\n\nاختر موقعاً لشرائه:"
+            await safe_edit_message(query, websites_text, reply_markup)
+        else:
+            keyboard = [[InlineKeyboardButton("🔙 العودة للقائمة الرئيسية", callback_data='start')]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await safe_edit_message(query, "❌ لا توجد مواقع متاحة حالياً", reply_markup)
     
     # Handle country selection
     elif query.data.startswith('country_'):
@@ -386,7 +398,77 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 reply_markup=reply_markup
             )
     
-    # Handle order confirmation
+    # Handle website purchase confirmation (must come before general confirm_ handler)
+    elif query.data.startswith('confirm_buy_website_'):
+        website_id = query.data[20:]  # Remove 'confirm_buy_website_' prefix
+        website = await db_manager.get_black_website(website_id)
+        
+        if website:
+            user_balance = await db_manager.get_user_balance(user.id)
+            
+            if user_balance >= website['price']:
+                # Process the purchase
+                success = await db_manager.purchase_black_website(website_id, user.id)
+                
+                if success:
+                    # Deduct balance
+                    await db_manager.update_user_balance(user.id, -website['price'])
+                    
+                    # Create transaction record
+                    await db_manager.create_transaction(
+                        user_id=user.id,
+                        transaction_type='purchase',
+                        amount=-website['price'],
+                        description=f"شراء موقع: {website['name']}"
+                    )
+                    
+                    keyboard = [[InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data='start')]]
+                    reply_markup = InlineKeyboardMarkup(keyboard)
+                    
+                    description = website.get('description', '')
+                    description_text = f"\n📄 الوصف: {description}\n" if description else ""
+                    
+                    success_text = f"""
+✅ تم شراء الموقع بنجاح!
+
+🌐 الموقع: {website['name']}
+🔗 الرابط: {website['url']}{description_text}
+💰 المبلغ المدفوع: ${website['price']}
+💳 رصيدك الجديد: ${user_balance - website['price']:.2f}
+
+⚠️ احتفظ بالرابط والوصف في مكان آمن
+                    """
+                    
+                    await safe_edit_message(query, success_text, reply_markup)
+                else:
+                    keyboard = [[InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data='start')]]
+                    reply_markup = InlineKeyboardMarkup(keyboard)
+                    await safe_edit_message(
+                        query,
+                        "❌ حدث خطأ في إتمام الشراء. يرجى المحاولة مرة أخرى.",
+                        reply_markup
+                    )
+            else:
+                keyboard = [
+                    [InlineKeyboardButton("💸 إيداع USDT", callback_data='depositusdt')],
+                    [InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data='start')]
+                ]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                await safe_edit_message(
+                    query,
+                    "⚠️ رصيدك غير كافي لإتمام هذا الشراء.",
+                    reply_markup
+                )
+        else:
+            keyboard = [[InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data='start')]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await safe_edit_message(
+                query,
+                "😔 هذا الموقع لم يعد متاحاً.",
+                reply_markup
+            )
+    
+    # Handle card order confirmation
     elif query.data.startswith('confirm_'):
         # Remove 'confirm_' prefix to get the full card_id
         card_id = query.data[8:]  # Remove 'confirm_' (8 characters)
@@ -463,6 +545,49 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 text="😔 هذه البطاقة لم تعد متاحة.",
                 reply_markup=reply_markup
             )
+    
+    # Handle black website purchase
+    elif query.data.startswith('buy_website_'):
+        website_id = query.data[12:]  # Remove 'buy_website_' prefix
+        website = await db_manager.get_black_website(website_id)
+        
+        if website:
+            user_balance = await db_manager.get_user_balance(user.id)
+            
+            if user_balance >= website['price']:
+                # Show confirmation dialog
+                keyboard = [
+                    [InlineKeyboardButton("✅ نعم، أريد الشراء", callback_data=f"confirm_buy_website_{website_id}")],
+                    [InlineKeyboardButton("❌ إلغاء", callback_data='blacklist')]
+                ]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                
+                confirmation_text = f"""
+🌐 تأكيد شراء الموقع
+
+📋 الموقع: {website['name']}
+💰 السعر: ${website['price']}
+💳 رصيدك الحالي: ${user_balance:.2f}
+
+هل أنت متأكد من شراء هذا الموقع؟
+                """
+                await safe_edit_message(query, confirmation_text, reply_markup)
+            else:
+                keyboard = [
+                    [InlineKeyboardButton("💸 إيداع USDT", callback_data='depositusdt')],
+                    [InlineKeyboardButton("🔙 العودة للمواقع", callback_data='blacklist')]
+                ]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                await safe_edit_message(
+                    query,
+                    f"⚠️ رصيدك غير كافي لشراء هذا الموقع.\n\n💰 السعر: ${website['price']}\n💳 رصيدك: ${user_balance:.2f}",
+                    reply_markup
+                )
+        else:
+            keyboard = [[InlineKeyboardButton("🔙 العودة للمواقع", callback_data='blacklist')]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await safe_edit_message(query, "😔 هذا الموقع لم يعد متاحاً.", reply_markup)
+    
 
 async def create_order_notification(user, card, order_id):
     """Create a notification for the order bot to process"""
