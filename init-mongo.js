@@ -10,6 +10,8 @@ db.createCollection('countries');
 db.createCollection('orders');
 db.createCollection('notifications');
 db.createCollection('black_websites');
+db.createCollection('support_conversations');
+db.createCollection('support_stats');
 
 // Create indexes for better performance
 db.users.createIndex({ "user_id": 1 }, { unique: true });
@@ -32,6 +34,13 @@ db.black_websites.createIndex({ "website_id": 1 }, { unique: true });
 db.black_websites.createIndex({ "is_available": 1 });
 db.black_websites.createIndex({ "is_deleted": 1 });
 db.black_websites.createIndex({ "name": 1 });
+db.support_conversations.createIndex({ "user_id": 1 });
+db.support_conversations.createIndex({ "status": 1 });
+db.support_conversations.createIndex({ "created_at": 1 });
+db.support_conversations.createIndex({ "last_message_at": 1 });
+db.support_conversations.createIndex([{ "status": 1 }, { "last_message_at": -1 }]);
+db.support_conversations.createIndex([{ "user_id": 1 }, { "status": 1 }], { unique: true, partialFilterExpression: { "status": "active" } });
+db.support_stats.createIndex({ "date": 1 }, { unique: true });
 
 // Insert sample data
 db.users.insertMany([

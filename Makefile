@@ -11,9 +11,17 @@ run_bot:
 run_order_bot:
 	python order_bot.py
 
+run_support_bot:
+	python support_bot.py
+
 run_both_bots:
 	python bot.py &
 	python order_bot.py
+
+run_all_bots:
+	python bot.py &
+	python order_bot.py &
+	python support_bot.py
 
 # Docker commands
 docker-build:
