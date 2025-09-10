@@ -27,6 +27,11 @@ services:
       - ADMIN_USER_ID=${ADMIN_USER_ID}
       - BINANCE_WALLET_TOKEN=${BINANCE_WALLET_TOKEN}
       - BINANCE_WALLET_ID=${BINANCE_WALLET_ID}
+      - USE_WEBHOOKS=${USE_WEBHOOKS:-false}
+      - WEBHOOK_URL=${WEBHOOK_URL}
+      - WEBHOOK_PORT=${WEBHOOK_PORT:-8443}
+    ports:
+      - "${WEBHOOK_PORT:-8443}:${WEBHOOK_PORT:-8443}"
     volumes:
       - .:/app
     networks:
@@ -42,6 +47,11 @@ services:
       - MONGODB_URL=mongodb://admin:password123@mongodb:27017/telegram_bot?authSource=admin
       - ORDER_BOT_TOKEN=${ORDER_BOT_TOKEN}
       - ADMIN_USER_ID=${ADMIN_USER_ID}
+      - USE_WEBHOOKS=${USE_WEBHOOKS:-false}
+      - ORDER_WEBHOOK_URL=${ORDER_WEBHOOK_URL}
+      - ORDER_WEBHOOK_PORT=${ORDER_WEBHOOK_PORT:-8444}
+    ports:
+      - "${ORDER_WEBHOOK_PORT:-8444}:${ORDER_WEBHOOK_PORT:-8444}"
     volumes:
       - .:/app
     command: python order_bot.py

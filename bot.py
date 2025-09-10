@@ -218,15 +218,18 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     # Handle country selection
     elif query.data.startswith('country_'):
         country_code = query.data.split('_')[1]
-        cards = await db_manager.get_cards_by_country(country_code)
+        grouped_cards = await db_manager.get_grouped_cards_by_country(country_code)
         
-        if cards:
+        if grouped_cards:
             keyboard = []
-            for card in cards:
-                card_text = f"{card['card_type']} بـ{card['price']} USDT"
+            for card_group in grouped_cards:
+                # Format: "Visa 20.0 ب USDT (5)"
+                card_text = f"{card_group['card_type']} {card_group['price']} ب USDT ({card_group['count']})"
+                # Use card_group format for callback data: cardgroup_countrycode_cardtype_price
+                callback_data = f"cardgroup_{country_code}_{card_group['card_type'].replace(' ', '_')}_{card_group['price']}"
                 keyboard.append([InlineKeyboardButton(
                     card_text,
-                    callback_data=f"card_{card['card_id']}"
+                    callback_data=callback_data
                 )])
             
             keyboard.append([InlineKeyboardButton("🔙 العودة لقائمة الدول", callback_data='cardlist')])
@@ -252,7 +255,73 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 reply_markup=reply_markup
             )
     
-    # Handle card selection
+    # Handle card group selection (new grouped display)
+    elif query.data.startswith('cardgroup_'):
+        # Parse callback data: cardgroup_countrycode_cardtype_price
+        parts = query.data.split('_')
+        country_code = parts[1]
+        card_type = parts[2].replace('_', ' ')  # Convert back from underscore format
+        price = float(parts[3])
+        
+        # Get one available card from this group
+        card = await db_manager.get_available_card_from_group(country_code, card_type, price)
+        
+        if card and card.get('is_available', False):
+            # Check user balance
+            user_balance = await db_manager.get_user_balance(user.id)
+            
+            if user_balance >= card['price']:
+                keyboard = [
+                    [InlineKeyboardButton("✅ نعم، أريد الشراء", callback_data=f"confirm_{card['card_id']}")],
+                    [InlineKeyboardButton("❌ لا، إلغاء", callback_data=f"country_{card['country_code']}")],
+                    [InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data='start')]
+                ]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                
+                confirmation_text = f"""
+                                        🛒 تأكيد الطلب
+
+                                        📋 تفاصيل البطاقة:
+                                        🏷️ النوع: {card['card_type']}
+                                        🌍 الدولة: {card.get('country_name', 'غير محدد')}
+                                        💰 السعر: {card['price']} USDT
+                                        💳 رصيدك الحالي: {user_balance:.2f} USDT
+
+                                        ❓ هل أنت متأكد من أنك تريد شراء هذه البطاقة؟
+                """
+                
+                await query.edit_message_text(text=confirmation_text, reply_markup=reply_markup)
+            else:
+                keyboard = [
+                    [InlineKeyboardButton("💸 إيداع USDT", callback_data='depositusdt')],
+                    [InlineKeyboardButton("🔙 العودة للبطاقات", callback_data=f"country_{card['country_code']}")],
+                    [InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data='start')]
+                ]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                
+                insufficient_text = f"""
+                                        ⚠️ رصيد غير كافي
+
+                                        💰 سعر البطاقة: {card['price']} USDT
+                                        💳 رصيدك الحالي: {user_balance:.2f} USDT
+                                        📉 تحتاج إلى: {card['price'] - user_balance:.2f} USDT إضافية
+
+                                        يرجى إيداع المبلغ المطلوب أولاً.
+                """
+                
+                await query.edit_message_text(text=insufficient_text, reply_markup=reply_markup)
+        else:
+            keyboard = [
+                [InlineKeyboardButton("🔙 العودة لقائمة الدول", callback_data='cardlist')],
+                [InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data='start')]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await query.edit_message_text(
+                text="😔 لا توجد بطاقات متاحة من هذا النوع حالياً",
+                reply_markup=reply_markup
+            )
+    
+    # Handle card selection (legacy - for individual card selection)
     elif query.data.startswith('card_'):
         logger.info(f"data: {query.data}")
         # Remove 'card_' prefix to get the full card_id
@@ -659,6 +728,9 @@ def main() -> None:
         level=logging.INFO
     )
     
+    # Reduce httpx logging noise
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    
     # Get bot token from environment or use default
     TOKEN = os.getenv('BOT_TOKEN', "7857065897:AAGM-nDNhZ8DDaTFGTt3g4CDlHXb355K5ps")
     
@@ -675,9 +747,31 @@ def main() -> None:
     application.add_handler(CallbackQueryHandler(button_handler))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, echo))
 
-    # Run the bot until the user presses Ctrl-C
-    logging.info("Starting bot...")
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
+    # Get webhook configuration
+    WEBHOOK_URL = os.getenv('WEBHOOK_URL')
+    WEBHOOK_PORT = int(os.getenv('WEBHOOK_PORT', '8443'))
+    USE_WEBHOOKS = os.getenv('USE_WEBHOOKS', 'false').lower() == 'true'
+    
+    if USE_WEBHOOKS and WEBHOOK_URL:
+        # Run with webhooks
+        logging.info(f"Starting bot with webhooks on port {WEBHOOK_PORT}...")
+        logging.info(f"Webhook URL: {WEBHOOK_URL}")
+        
+        application.run_webhook(
+            listen="0.0.0.0",
+            port=WEBHOOK_PORT,
+            url_path="webhook",
+            webhook_url=f"{WEBHOOK_URL}/webhook",
+            allowed_updates=Update.ALL_TYPES
+        )
+    else:
+        # Fallback to polling
+        logging.info("Starting bot with polling...")
+        application.run_polling(
+            allowed_updates=Update.ALL_TYPES,
+            poll_interval=2.0,  # Check every 2 seconds instead of default 0.1
+            timeout=10          # Wait up to 10 seconds for updates
+        )
 
 if __name__ == '__main__':
     main()

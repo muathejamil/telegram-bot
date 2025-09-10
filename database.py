@@ -234,6 +234,69 @@ class DatabaseManager:
             logger.error(f"Error getting cards for country {country_code}: {e}")
             return []
     
+    async def get_grouped_cards_by_country(self, country_code: str) -> List[Dict[str, Any]]:
+        """Get available cards grouped by type and price for a specific country"""
+        try:
+            pipeline = [
+                {
+                    "$match": {
+                        "country_code": country_code,
+                        "is_available": True,
+                        "is_deleted": {"$ne": True}
+                    }
+                },
+                {
+                    "$group": {
+                        "_id": {
+                            "card_type": "$card_type",
+                            "price": "$price",
+                            "value": "$value",
+                            "country_code": "$country_code",
+                            "country_name": "$country_name"
+                        },
+                        "count": {"$sum": 1},
+                        "card_ids": {"$push": "$card_id"}  # Keep track of individual card IDs
+                    }
+                },
+                {
+                    "$project": {
+                        "_id": 0,
+                        "card_type": "$_id.card_type",
+                        "price": "$_id.price",
+                        "value": "$_id.value",
+                        "country_code": "$_id.country_code",
+                        "country_name": "$_id.country_name",
+                        "count": 1,
+                        "card_ids": 1
+                    }
+                },
+                {
+                    "$sort": {"price": 1, "card_type": 1}  # Sort by price then by type
+                }
+            ]
+            
+            cursor = self.cards.aggregate(pipeline)
+            grouped_cards = await cursor.to_list(length=None)
+            return grouped_cards
+        except Exception as e:
+            logger.error(f"Error getting grouped cards for country {country_code}: {e}")
+            return []
+    
+    async def get_available_card_from_group(self, country_code: str, card_type: str, price: float) -> Optional[Dict[str, Any]]:
+        """Get one available card from a specific group (type + price)"""
+        try:
+            card = await self.cards.find_one({
+                "country_code": country_code,
+                "card_type": card_type,
+                "price": price,
+                "is_available": True,
+                "is_deleted": {"$ne": True}
+            })
+            return card
+        except Exception as e:
+            logger.error(f"Error getting available card from group {card_type} {price}: {e}")
+            return None
+    
     # Orders operations
     async def create_order(self, user_id: int, card_id: str, country_code: str, amount: float) -> Optional[str]:
         """Create a new order"""

@@ -13,6 +13,9 @@ from telegram.error import BadRequest
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Reduce httpx logging noise
+logging.getLogger("httpx").setLevel(logging.WARNING)
+
 # Predefined countries for easy selection
 COUNTRIES = {
     'US': {'name': 'الولايات المتحدة', 'flag': '🇺🇸'},
@@ -975,11 +978,11 @@ async def order_button_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         
         keyboard = [[InlineKeyboardButton("❌ إلغاء", callback_data=f'edit_card_{card_id}')]]
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await safe_edit_message(
-            query,
-            "💳 تعديل القيمة\n\nأدخل قيمة البطاقة الجديدة (مثال: 25.00):",
-            reply_markup
-        )
+        # await safe_edit_message(
+        #     query,
+        #     "💳 تعديل القيمة\n\nأدخل قيمة البطاقة الجديدة (مثال: 25.00):",
+        #     reply_markup
+        # )
     
     elif query.data.startswith('edit_type_'):
         card_id = query.data[10:]  # Remove 'edit_type_' prefix
@@ -1919,9 +1922,31 @@ def main() -> None:
     application.add_handler(MessageHandler(filters.PHOTO, handle_card_image_upload))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_card_addition_text))
     
-    # Run the bot until the user presses Ctrl-C
-    logging.info("Starting order management bot...")
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
+    # Get webhook configuration
+    WEBHOOK_URL = os.getenv('ORDER_WEBHOOK_URL')
+    WEBHOOK_PORT = int(os.getenv('ORDER_WEBHOOK_PORT', '8444'))
+    USE_WEBHOOKS = os.getenv('USE_WEBHOOKS', 'false').lower() == 'true'
+    
+    if USE_WEBHOOKS and WEBHOOK_URL:
+        # Run with webhooks
+        logging.info(f"Starting order management bot with webhooks on port {WEBHOOK_PORT}...")
+        logging.info(f"Webhook URL: {WEBHOOK_URL}")
+        
+        application.run_webhook(
+            listen="0.0.0.0",
+            port=WEBHOOK_PORT,
+            url_path="webhook",
+            webhook_url=f"{WEBHOOK_URL}/webhook",
+            allowed_updates=Update.ALL_TYPES
+        )
+    else:
+        # Fallback to polling
+        logging.info("Starting order management bot with polling...")
+        application.run_polling(
+            allowed_updates=Update.ALL_TYPES,
+            poll_interval=3.0,  # Check every 3 seconds (admin bot can be slower)
+            timeout=10          # Wait up to 10 seconds for updates
+        )
 
 
 if __name__ == '__main__':

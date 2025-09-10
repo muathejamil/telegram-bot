@@ -2,8 +2,16 @@
 
 ## Current Work Focus
 
-### Recently Completed (2025-09-01)
-✅ **Fixed Critical Telegram API Error**
+### Recently Completed (2025-09-10)
+✅ **Improved Card Display with Grouping**
+- **Issue**: Cards were displayed individually, showing duplicate entries (e.g., 5 separate "Visa 20.0 ب USDT" buttons)
+- **Solution**: 
+  - Added `get_grouped_cards_by_country()` database method using MongoDB aggregation
+  - Updated card display to show grouped format: "Visa 20.0 ب USDT (5)"
+  - Added `get_available_card_from_group()` method to select cards from groups
+  - Implemented new `cardgroup_` callback handler for grouped card selection
+
+✅ **Fixed Critical Telegram API Error** (2025-09-01)
 - **Issue**: BadRequest exception when users clicked "🔄 تحديث القائمة" (refresh menu)
 - **Root Cause**: Telegram API rejects editing messages with identical content
 - **Solution**: 
