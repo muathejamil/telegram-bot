@@ -2423,6 +2423,9 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     elif context.user_data.get('editing_country'):
         logger.info("Routing to country editing handler")
         await handle_country_editing(update, context)
+    elif context.user_data.get('charging_user'):
+        logger.info("Routing to user charging handler")
+        await handle_balance_charging(update, context)
     else:
         logger.info("No matching context found for text input")
 
