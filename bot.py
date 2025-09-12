@@ -100,40 +100,36 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         keyboard = [[InlineKeyboardButton("🔙 العودة للقائمة الرئيسية", callback_data='start')]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        profile_text = f"""
-                        👨‍💼 الملف الشخصي
+        profile_text = f"""👨‍💼 الملف الشخصي
 
-                        🆔 معرف المستخدم: {user.id}
-                        👤 الاسم: {user.first_name or 'غير محدد'}
-                        📧 اسم المستخدم: @{user.username or 'غير محدد'}
-                        💰 الرصيد: ${balance:.2f}
-                        📅 تاريخ التسجيل: {user_data.get('created_at', 'غير محدد') if user_data else 'غير محدد'}
-        """
+🆔 معرف المستخدم: {user.id}
+👤 الاسم: {user.first_name or 'غير محدد'}
+📧 اسم المستخدم: @{user.username or 'غير محدد'}
+💰 الرصيد: ${balance:.2f}
+📅 تاريخ التسجيل: {user_data.get('created_at', 'غير محدد') if user_data else 'غير محدد'}"""
         await safe_edit_message(query, profile_text, reply_markup)
         
     elif query.data == 'depositusdt':
         keyboard = [[InlineKeyboardButton("🔙 العودة للقائمة الرئيسية", callback_data='start')]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        deposit_text = f"""
-                        💸 إيداع USDT
+        deposit_text = f"""💸 إيداع USDT
 
-                        لإيداع USDT في حساب البوت، يرجى اتباع التعليمات التالية:
+لإيداع USDT في حساب البوت، يرجى اتباع التعليمات التالية:
 
-                        ⚠️ تأكد من إرسال المعاملة من محفظة تدعم شبكة TRON (TRC20)
+⚠️ تأكد من إرسال المعاملة من محفظة تدعم شبكة TRON (TRC20)
 
-                        1️⃣ أرسل المبلغ المطلوب إيداعه إلى العنوان التالي:
-                        📧 العنوان: {os.getenv('BINANCE_WALLET_TOKEN')}
+1️⃣ أرسل المبلغ المطلوب إيداعه إلى العنوان التالي:
+📧 العنوان: {os.getenv('BINANCE_WALLET_TOKEN')}
 
-                        ID BINANCE: {os.getenv('BINANCE_WALLET_ID')}
+ID BINANCE: {os.getenv('BINANCE_WALLET_ID')}
 
-                        Binance gift card (بطاقة بايننس)
-                        Itunes gift card (بطاقة إيتونس)
+Binance gift card (بطاقة بايننس)
+Itunes gift card (بطاقة إيتونس)
 
-                        2️⃣ أرسل صورة من إيصال التحويل مع معرف المستخدم الخاص بك
+2️⃣ أرسل صورة من إيصال التحويل مع معرف المستخدم الخاص بك
 
-                        3️⃣ انتظر التأكيد من الإدارة (عادة خلال 1 ساعة)
-        """
+3️⃣ انتظر التأكيد من الإدارة (عادة خلال 1 ساعة)"""
         await safe_edit_message(query, deposit_text, reply_markup)
         
     elif query.data == 'cardlist':
@@ -166,43 +162,39 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         keyboard = [[InlineKeyboardButton("🔙 العودة للقائمة الرئيسية", callback_data='start')]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        help_text = """
-                    🤔 طريقة استخدام البوت
+        help_text = """🤔 طريقة استخدام البوت
 
-                    1️⃣ قم بإيداع USDT في حسابك ،ومشاركة وصل الدفع مع بوت الدعم
-                    2️⃣ تصفح قائمة البطاقات المتاحة
-                    3️⃣ اختر البطاقة المناسبة لك
-                    4️⃣ تأكد من وجود رصيد كافي
-                    5️⃣ اتبع التعليمات لإتمام الشراء
-                    6️⃣ استلم تفاصيل البطاقة
+1️⃣ قم بإيداع USDT في حسابك ،ومشاركة وصل الدفع مع بوت الدعم
+2️⃣ تصفح قائمة البطاقات المتاحة
+3️⃣ اختر البطاقة المناسبة لك
+4️⃣ تأكد من وجود رصيد كافي
+5️⃣ اتبع التعليمات لإتمام الشراء
+6️⃣ استلم تفاصيل البطاقة
 
-                    💡 نصائح مهمة:
-                    • تأكد من صحة البيانات قبل الشراء
-                    • احتفظ بتفاصيل البطاقة في مكان آمن
-                    • تواصل مع الدعم في حالة وجود مشاكل @FastCardChat
-        """
+💡 نصائح مهمة:
+• تأكد من صحة البيانات قبل الشراء
+• احتفظ بتفاصيل البطاقة في مكان آمن
+• تواصل مع الدعم في حالة وجود مشاكل @FastCardChat"""
         await query.edit_message_text(text=help_text, reply_markup=reply_markup)
         
     elif query.data == 'cardreplaceinstructions':
         keyboard = [[InlineKeyboardButton("🔙 العودة للقائمة الرئيسية", callback_data='start')]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        replace_text = """
-                    💳 شروط استبدال البطاقة
+        replace_text = """💳 شروط استبدال البطاقة
 
-                    📋 الشروط العامة:
-                    • يجب الإبلاغ عن المشكلة خلال 24 ساعة من الشراء
-                    • تقديم دليل على عدم عمل البطاقة
-                    • عدم استخدام البطاقة بشكل خاطئ
+📋 الشروط العامة:
+• يجب الإبلاغ عن المشكلة خلال 24 ساعة من الشراء
+• تقديم دليل على عدم عمل البطاقة
+• عدم استخدام البطاقة بشكل خاطئ
 
-                    🔄 عملية الاستبدال:
-                    1️⃣ تواصل مع الدعم الفني @FastCardChat
-                    2️⃣ قدم تفاصيل المشكلة
-                    3️⃣ أرسل صورة من محاولة الاستخدام
-                    4️⃣ انتظر المراجعة والموافقة
+🔄 عملية الاستبدال:
+1️⃣ تواصل مع الدعم الفني @FastCardChat
+2️⃣ قدم تفاصيل المشكلة
+3️⃣ أرسل صورة من محاولة الاستخدام
+4️⃣ انتظر المراجعة والموافقة
 
-                    ⏰ مدة المعالجة: 24-48 ساعة
-        """
+⏰ مدة المعالجة: 24-48 ساعة"""
         await query.edit_message_text(text=replace_text, reply_markup=reply_markup)
         
     elif query.data == 'blacklist':
@@ -290,17 +282,15 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 ]
                 reply_markup = InlineKeyboardMarkup(keyboard)
                 
-                confirmation_text = f"""
-                                        🛒 تأكيد الطلب
+                confirmation_text = f"""🛒 تأكيد الطلب
 
-                                        📋 تفاصيل البطاقة:
-                                        🏷️ النوع: {card['card_type']}
-                                        🌍 الدولة: {card.get('country_name', 'غير محدد')}
-                                        💰 السعر: {card['price']} USDT
-                                        💳 رصيدك الحالي: {user_balance:.2f} USDT
+📋 تفاصيل البطاقة:
+🏷️ النوع: {card['card_type']}
+🌍 الدولة: {card.get('country_name', 'غير محدد')}
+💰 السعر: {card['price']} USDT
+💳 رصيدك الحالي: {user_balance:.2f} USDT
 
-                                        ❓ هل أنت متأكد من أنك تريد شراء هذه البطاقة؟
-                """
+❓ هل أنت متأكد من أنك تريد شراء هذه البطاقة؟"""
                 
                 await query.edit_message_text(text=confirmation_text, reply_markup=reply_markup)
             else:
@@ -311,15 +301,13 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 ]
                 reply_markup = InlineKeyboardMarkup(keyboard)
                 
-                insufficient_text = f"""
-                                        ⚠️ رصيد غير كافي
+                insufficient_text = f"""⚠️ رصيد غير كافي
 
-                                        💰 سعر البطاقة: {card['price']} USDT
-                                        💳 رصيدك الحالي: {user_balance:.2f} USDT
-                                        📉 تحتاج إلى: {card['price'] - user_balance:.2f} USDT إضافية
+💰 سعر البطاقة: {card['price']} USDT
+💳 رصيدك الحالي: {user_balance:.2f} USDT
+📉 تحتاج إلى: {card['price'] - user_balance:.2f} USDT إضافية
 
-                                        يرجى إيداع المبلغ المطلوب أولاً.
-                """
+يرجى إيداع المبلغ المطلوب أولاً."""
                 
                 await query.edit_message_text(text=insufficient_text, reply_markup=reply_markup)
         else:
@@ -355,17 +343,15 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 ]
                 reply_markup = InlineKeyboardMarkup(keyboard)
                 
-                confirmation_text = f"""
-                                        🛒 تأكيد الطلب
+                confirmation_text = f"""🛒 تأكيد الطلب
 
-                                        📋 تفاصيل البطاقة:
-                                        🏷️ النوع: {card['card_type']}
-                                        🌍 الدولة: {card.get('country_name', 'غير محدد')}
-                                        💰 السعر: {card['price']} USDT
-                                        💳 رصيدك الحالي: {user_balance:.2f} USDT
+📋 تفاصيل البطاقة:
+🏷️ النوع: {card['card_type']}
+🌍 الدولة: {card.get('country_name', 'غير محدد')}
+💰 السعر: {card['price']} USDT
+💳 رصيدك الحالي: {user_balance:.2f} USDT
 
-                                        ❓ هل أنت متأكد من أنك تريد شراء هذه البطاقة؟
-                """
+❓ هل أنت متأكد من أنك تريد شراء هذه البطاقة؟"""
                 
                 await query.edit_message_text(text=confirmation_text, reply_markup=reply_markup)
             else:
@@ -376,15 +362,13 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 ]
                 reply_markup = InlineKeyboardMarkup(keyboard)
                 
-                insufficient_text = f"""
-                                        ⚠️ رصيد غير كافي
+                insufficient_text = f"""⚠️ رصيد غير كافي
 
-                                        💰 سعر البطاقة: {card['price']} USDT
-                                        💳 رصيدك الحالي: {user_balance:.2f} USDT
-                                        📉 تحتاج إلى: {card['price'] - user_balance:.2f} USDT إضافية
+💰 سعر البطاقة: {card['price']} USDT
+💳 رصيدك الحالي: {user_balance:.2f} USDT
+📉 تحتاج إلى: {card['price'] - user_balance:.2f} USDT إضافية
 
-                                        يرجى إيداع المبلغ المطلوب أولاً.
-                """
+يرجى إيداع المبلغ المطلوب أولاً."""
                 
                 await query.edit_message_text(text=insufficient_text, reply_markup=reply_markup)
         else:
@@ -508,17 +492,15 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                     keyboard = [[InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data='start')]]
                     reply_markup = InlineKeyboardMarkup(keyboard)
                     
-                    success_text = f"""
-                            ✅ تم إنشاء الطلب بنجاح!
+                    success_text = f"""✅ تم إنشاء الطلب بنجاح!
 
-                            🆔 رقم الطلب: {order_id}
-                            🏷️ نوع البطاقة: {card['card_type']}
-                            💰 المبلغ المدفوع: {card['price']} USDT
+🆔 رقم الطلب: {order_id}
+🏷️ نوع البطاقة: {card['card_type']}
+💰 المبلغ المدفوع: {card['price']} USDT
 
-                            📨 تم إرسال إشعار للإدارة وسيتم إرسال تفاصيل البطاقة قريباً.
+📨 تم إرسال إشعار للإدارة وسيتم إرسال تفاصيل البطاقة قريباً.
 
-                            ⏰ وقت التسليم المتوقع: 5-30 دقيقة
-                    """
+⏰ وقت التسليم المتوقع: 5-30 دقيقة"""
                     
                     await query.edit_message_text(text=success_text, reply_markup=reply_markup)
                 else:
@@ -663,8 +645,7 @@ async def handle_card_delivery(application, notification):
             return
         
         # Format card details message
-        card_message = f"""
-🎉 تم تجهيز بطاقتك بنجاح!
+        card_message = f"""🎉 تم تجهيز بطاقتك بنجاح!
 
 📋 تفاصيل البطاقة:
 🆔 رقم الطلب: {order_id}
@@ -677,8 +658,7 @@ async def handle_card_delivery(application, notification):
 • لا تشارك تفاصيل البطاقة مع أي شخص
 • تأكد من استخدام البطاقة في المواقع الآمنة فقط
 
-✅ شكراً لاستخدام خدماتنا!
-        """
+✅ شكراً لاستخدام خدماتنا!"""
         
         await application.bot.send_message(
             chat_id=user_id,
@@ -717,8 +697,7 @@ async def handle_card_image_delivery(application, notification):
         image_io = io.BytesIO(image_data)
         
         # Send the image with a caption
-        caption = f"""
-🎉 تم تجهيز بطاقتك بنجاح!
+        caption = f"""🎉 تم تجهيز بطاقتك بنجاح!
 
 🆔 رقم الطلب: {order_id}
 📷 تفاصيل البطاقة في الصورة أعلاه
@@ -728,8 +707,7 @@ async def handle_card_image_delivery(application, notification):
 • لا تشارك تفاصيل البطاقة مع أي شخص
 • تأكد من استخدام البطاقة في المواقع الآمنة فقط
 
-✅ شكراً لاستخدام خدماتنا!
-        """
+✅ شكراً لاستخدام خدماتنا!"""
         
         await application.bot.send_photo(
             chat_id=user_id,
