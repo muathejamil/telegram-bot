@@ -68,3 +68,14 @@ dev-setup: dev-up docker-build docker-up
 # Cleanup
 clean: docker-clean
 	rm -rf venv __pycache__ .env
+
+
+push-bot:
+	docker build -t telegram-bot .
+	docker tag telegram-bot:latest 135222871115.dkr.ecr.eu-north-1.amazonaws.com/telegram/bot:latest
+	docker push 135222871115.dkr.ecr.eu-north-1.amazonaws.com/telegram/bot:latest
+
+push-order-bot:
+	docker build -t telegram-order-bot .
+	docker tag telegram-order-bot:latest 135222871115.dkr.ecr.eu-north-1.amazonaws.com/telegram/order-bot:latest
+	docker push 135222871115.dkr.ecr.eu-north-1.amazonaws.com/telegram/order-bot:latest

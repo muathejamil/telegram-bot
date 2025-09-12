@@ -267,6 +267,98 @@ class DatabaseManager:
             logger.error(f"Error getting available countries: {e}")
             return []
     
+    async def get_all_countries(self) -> List[Dict[str, Any]]:
+        """Get all countries (active and inactive)"""
+        try:
+            countries = await self.countries.find({}).sort("name", 1).to_list(length=None)
+            return countries
+        except Exception as e:
+            logger.error(f"Error getting all countries: {e}")
+            return []
+    
+    async def add_country(self, code: str, name: str, flag: str) -> bool:
+        """Add a new country"""
+        try:
+            country_data = {
+                "code": code.upper(),
+                "name": name,
+                "flag": flag,
+                "is_active": True,
+                "created_at": datetime.now(UTC)
+            }
+            
+            result = await self.countries.insert_one(country_data)
+            if result.inserted_id:
+                logger.info(f"Added new country: {code} - {name}")
+                return True
+            return False
+        except Exception as e:
+            logger.error(f"Error adding country {code}: {e}")
+            return False
+    
+    async def update_country(self, code: str, name: str = None, flag: str = None, is_active: bool = None) -> bool:
+        """Update country information"""
+        try:
+            # First check if country exists
+            existing_country = await self.get_country_by_code(code)
+            if not existing_country:
+                logger.error(f"Country {code} not found for update")
+                return False
+            
+            update_data = {}
+            if name is not None:
+                update_data["name"] = name
+            if flag is not None:
+                update_data["flag"] = flag
+            if is_active is not None:
+                update_data["is_active"] = is_active
+            
+            if not update_data:
+                return False
+            
+            update_data["updated_at"] = datetime.now(UTC)
+            
+            result = await self.countries.update_one(
+                {"code": code.upper()},
+                {"$set": update_data}
+            )
+            
+            # Check if the operation was successful (matched_count > 0 means country was found)
+            if result.matched_count > 0:
+                logger.info(f"Updated country: {code} (modified: {result.modified_count} fields)")
+                return True
+            else:
+                logger.error(f"Country {code} not found during update operation")
+                return False
+        except Exception as e:
+            logger.error(f"Error updating country {code}: {e}")
+            return False
+    
+    async def delete_country(self, code: str) -> bool:
+        """Soft delete a country (set as inactive)"""
+        try:
+            result = await self.countries.update_one(
+                {"code": code.upper()},
+                {"$set": {"is_active": False, "deleted_at": datetime.now(UTC)}}
+            )
+            
+            if result.modified_count > 0:
+                logger.info(f"Deleted country: {code}")
+                return True
+            return False
+        except Exception as e:
+            logger.error(f"Error deleting country {code}: {e}")
+            return False
+    
+    async def get_country_by_code(self, code: str) -> Optional[Dict[str, Any]]:
+        """Get a specific country by code"""
+        try:
+            country = await self.countries.find_one({"code": code.upper()})
+            return country
+        except Exception as e:
+            logger.error(f"Error getting country {code}: {e}")
+            return None
+    
     async def get_cards_by_country(self, country_code: str) -> List[Dict[str, Any]]:
         """Get available cards for a specific country"""
         try:

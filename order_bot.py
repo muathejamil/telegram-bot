@@ -16,25 +16,8 @@ logger = logging.getLogger(__name__)
 # Reduce httpx logging noise
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
-# Predefined countries for easy selection
-COUNTRIES = {
-    'US': {'name': 'الولايات المتحدة', 'flag': '🇺🇸'},
-    'UK': {'name': 'المملكة المتحدة', 'flag': '🇬🇧'},
-    'CA': {'name': 'كندا', 'flag': '🇨🇦'},
-    'DE': {'name': 'ألمانيا', 'flag': '🇩🇪'},
-    'FR': {'name': 'فرنسا', 'flag': '🇫🇷'},
-    'IT': {'name': 'إيطاليا', 'flag': '🇮🇹'},
-    'ES': {'name': 'إسبانيا', 'flag': '🇪🇸'},
-    'AU': {'name': 'أستراليا', 'flag': '🇦🇺'},
-    'JP': {'name': 'اليابان', 'flag': '🇯🇵'},
-    'KR': {'name': 'كوريا الجنوبية', 'flag': '🇰🇷'},
-    'AE': {'name': 'الإمارات العربية المتحدة', 'flag': '🇦🇪'},
-    'SA': {'name': 'المملكة العربية السعودية', 'flag': '🇸🇦'},
-    'TR': {'name': 'تركيا', 'flag': '🇹🇷'},
-    'NL': {'name': 'هولندا', 'flag': '🇳🇱'},
-    'SE': {'name': 'السويد', 'flag': '🇸🇪'},
-    'IL': {'name': 'إسرائيل', 'flag': '🇮🇱'},
-}
+# Countries are now managed dynamically through the admin interface
+# All country data is stored in the MongoDB countries collection
 
 
 async def safe_edit_message(query, text, reply_markup=None, fallback_answer="تم التحديث ✅"):
@@ -67,6 +50,7 @@ async def start_order_bot(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         [InlineKeyboardButton("📋 الطلبات المعلقة", callback_data='pending_orders')],
         [InlineKeyboardButton("✅ الطلبات المكتملة", callback_data='completed_orders')],
         [InlineKeyboardButton("💳 إدارة البطاقات", callback_data='manage_cards')],
+        [InlineKeyboardButton("🌍 إدارة الدول", callback_data='manage_countries')],
         [InlineKeyboardButton("🌐 إدارة المواقع السوداء", callback_data='manage_black_websites')],
         [InlineKeyboardButton("👥 إدارة المستخدمين", callback_data='manage_users')],
         [InlineKeyboardButton("📊 الإحصائيات", callback_data='statistics')]
@@ -169,6 +153,7 @@ async def order_button_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             [InlineKeyboardButton("📋 الطلبات المعلقة", callback_data='pending_orders')],
             [InlineKeyboardButton("✅ الطلبات المكتملة", callback_data='completed_orders')],
             [InlineKeyboardButton("💳 إدارة البطاقات", callback_data='manage_cards')],
+            [InlineKeyboardButton("🌍 إدارة الدول", callback_data='manage_countries')],
             [InlineKeyboardButton("🌐 إدارة المواقع السوداء", callback_data='manage_black_websites')],
             [InlineKeyboardButton("👥 إدارة المستخدمين", callback_data='manage_users')],
             [InlineKeyboardButton("📊 الإحصائيات", callback_data='statistics')]
@@ -534,6 +519,102 @@ async def order_button_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             reply_markup = InlineKeyboardMarkup(keyboard)
             await safe_edit_message(query, "✅ لا توجد بطاقات محذوفة للاستعادة", reply_markup        )
     
+    # Handle countries management
+    elif query.data == 'manage_countries':
+        keyboard = [
+            [InlineKeyboardButton("➕ إضافة دولة", callback_data='add_country')],
+            [InlineKeyboardButton("📝 تعديل دولة", callback_data='edit_countries')],
+            [InlineKeyboardButton("🗑️ حذف دولة", callback_data='delete_countries')],
+            [InlineKeyboardButton("📋 عرض الدول", callback_data='view_countries')],
+            [InlineKeyboardButton("🔙 العودة للقائمة الرئيسية", callback_data='start')]
+        ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await safe_edit_message(
+            query,
+            "🌍 إدارة الدول\n\nاختر الإجراء المطلوب:",
+            reply_markup
+        )
+    
+    elif query.data == 'view_countries':
+        countries = await db_manager.get_all_countries()
+        
+        if countries:
+            countries_text = "📋 قائمة الدول:\n\n"
+            for country in countries:
+                status = "🟢 نشطة" if country.get('is_active', True) else "🔴 غير نشطة"
+                countries_text += f"🌍 {country['flag']} {country['name']} ({country['code']})\n"
+                countries_text += f"📊 {status}\n\n"
+            
+            keyboard = [[InlineKeyboardButton("🔙 العودة لإدارة الدول", callback_data='manage_countries')]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await safe_edit_message(query, countries_text, reply_markup)
+        else:
+            keyboard = [[InlineKeyboardButton("🔙 العودة لإدارة الدول", callback_data='manage_countries')]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await safe_edit_message(query, "📋 لا توجد دول في النظام حالياً", reply_markup)
+    
+    elif query.data == 'edit_countries':
+        countries = await db_manager.get_all_countries()
+        
+        if countries:
+            keyboard = []
+            for country in countries:
+                status_icon = "🟢" if country.get('is_active', True) else "🔴"
+                keyboard.append([InlineKeyboardButton(
+                    f"{status_icon} {country['flag']} {country['name']} ({country['code']})",
+                    callback_data=f"edit_country_{country['code']}"
+                )])
+            
+            keyboard.append([InlineKeyboardButton("🔙 العودة لإدارة الدول", callback_data='manage_countries')])
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await safe_edit_message(
+                query,
+                "📝 اختر الدولة التي تريد تعديلها:",
+                reply_markup
+            )
+        else:
+            keyboard = [[InlineKeyboardButton("🔙 العودة لإدارة الدول", callback_data='manage_countries')]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await safe_edit_message(query, "❌ لا توجد دول للتعديل", reply_markup)
+    
+    elif query.data == 'delete_countries':
+        countries = await db_manager.get_available_countries()
+        
+        if countries:
+            keyboard = []
+            for country in countries:
+                keyboard.append([InlineKeyboardButton(
+                    f"🗑️ {country['flag']} {country['name']} ({country['code']})",
+                    callback_data=f"delete_country_{country['code']}"
+                )])
+            
+            keyboard.append([InlineKeyboardButton("🔙 العودة لإدارة الدول", callback_data='manage_countries')])
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await safe_edit_message(
+                query,
+                "🗑️ اختر الدولة التي تريد حذفها:",
+                reply_markup
+            )
+        else:
+            keyboard = [[InlineKeyboardButton("🔙 العودة لإدارة الدول", callback_data='manage_countries')]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await safe_edit_message(query, "❌ لا توجد دول للحذف", reply_markup)
+    
+    elif query.data == 'add_country':
+        context.user_data['adding_country'] = True
+        context.user_data['country_step'] = 'code'
+        
+        keyboard = [[InlineKeyboardButton("❌ إلغاء", callback_data='manage_countries')]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await safe_edit_message(
+            query,
+            "➕ إضافة دولة جديدة\n\n1️⃣ يرجى إدخال رمز الدولة (مثال: US, UK, SA):",
+            reply_markup
+        )
+
     # Handle black websites management
     elif query.data == 'manage_black_websites':
         keyboard = [
@@ -635,6 +716,150 @@ async def order_button_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             reply_markup = InlineKeyboardMarkup(keyboard)
             await safe_edit_message(query, "❌ لا توجد مواقع للحذف", reply_markup)
     
+    # Handle individual country actions - ORDER MATTERS! More specific patterns first
+    elif query.data.startswith('edit_country_name_'):
+        country_code = query.data[18:]  # Remove 'edit_country_name_' prefix
+        logger.info(f"Starting country name edit for: {country_code} (full callback: {query.data})")
+        
+        # Verify country exists before starting edit process
+        country = await db_manager.get_country_by_code(country_code)
+        if not country:
+            keyboard = [[InlineKeyboardButton("🔙 العودة لتعديل الدول", callback_data='edit_countries')]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await safe_edit_message(query, f"❌ لم يتم العثور على الدولة {country_code}", reply_markup)
+            return
+        
+        context.user_data['editing_country'] = country_code
+        context.user_data['country_step'] = 'name'
+        
+        keyboard = [[InlineKeyboardButton("❌ إلغاء", callback_data=f'edit_country_{country_code}')]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await safe_edit_message(
+            query,
+            f"📝 تعديل اسم الدولة {country_code}\n"
+            f"الاسم الحالي: {country['name']}\n\n"
+            f"يرجى إدخال الاسم الجديد:",
+            reply_markup
+        )
+    
+    elif query.data.startswith('edit_country_flag_'):
+        country_code = query.data[18:]  # Remove 'edit_country_flag_' prefix
+        logger.info(f"Starting country flag edit for: {country_code} (full callback: {query.data})")
+        
+        # Verify country exists before starting edit process
+        country = await db_manager.get_country_by_code(country_code)
+        if not country:
+            keyboard = [[InlineKeyboardButton("🔙 العودة لتعديل الدول", callback_data='edit_countries')]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await safe_edit_message(query, f"❌ لم يتم العثور على الدولة {country_code}", reply_markup)
+            return
+        
+        context.user_data['editing_country'] = country_code
+        context.user_data['country_step'] = 'flag'
+        
+        keyboard = [[InlineKeyboardButton("❌ إلغاء", callback_data=f'edit_country_{country_code}')]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await safe_edit_message(
+            query,
+            f"🏳️ تعديل علم الدولة {country_code}\n"
+            f"العلم الحالي: {country['flag']}\n\n"
+            f"يرجى إدخال الرمز التعبيري الجديد للعلم:",
+            reply_markup
+        )
+    
+    elif query.data.startswith('edit_country_'):
+        country_code = query.data[13:]  # Remove 'edit_country_' prefix
+        logger.info(f"Edit country callback: {query.data} -> extracted code: {country_code}")
+        country = await db_manager.get_country_by_code(country_code)
+        
+        if country:
+            context.user_data['editing_country'] = country_code
+            context.user_data['country_step'] = 'edit_choice'
+            
+            keyboard = [
+                [InlineKeyboardButton("📝 تعديل الاسم", callback_data=f"edit_country_name_{country_code}")],
+                [InlineKeyboardButton("🏳️ تعديل العلم", callback_data=f"edit_country_flag_{country_code}")],
+                [InlineKeyboardButton("🔄 تغيير الحالة", callback_data=f"toggle_country_{country_code}")],
+                [InlineKeyboardButton("❌ إلغاء", callback_data='edit_countries')]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            status = "🟢 نشطة" if country.get('is_active', True) else "🔴 غير نشطة"
+            await safe_edit_message(
+                query,
+                f"📝 تعديل الدولة: {country['flag']} {country['name']} ({country['code']})\n"
+                f"📊 الحالة: {status}\n\n"
+                f"اختر ما تريد تعديله:",
+                reply_markup
+            )
+        else:
+            keyboard = [[InlineKeyboardButton("🔙 العودة لتعديل الدول", callback_data='edit_countries')]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await safe_edit_message(query, f"❌ لم يتم العثور على الدولة {country_code}", reply_markup)
+    
+    elif query.data.startswith('toggle_country_'):
+        country_code = query.data[15:]  # Remove 'toggle_country_' prefix
+        country = await db_manager.get_country_by_code(country_code)
+        
+        if country:
+            new_status = not country.get('is_active', True)
+            success = await db_manager.update_country(country_code, is_active=new_status)
+            
+            if success:
+                status_text = "تم تفعيل" if new_status else "تم إلغاء تفعيل"
+                keyboard = [[InlineKeyboardButton("🔙 العودة لتعديل الدول", callback_data='edit_countries')]]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                await safe_edit_message(
+                    query,
+                    f"✅ {status_text} الدولة {country['flag']} {country['name']} بنجاح!",
+                    reply_markup
+                )
+            else:
+                keyboard = [[InlineKeyboardButton("🔙 العودة لتعديل الدول", callback_data='edit_countries')]]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                await safe_edit_message(query, f"❌ فشل في تحديث حالة الدولة {country_code}", reply_markup)
+        else:
+            keyboard = [[InlineKeyboardButton("🔙 العودة لتعديل الدول", callback_data='edit_countries')]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await safe_edit_message(query, f"❌ لم يتم العثور على الدولة {country_code}", reply_markup)
+    
+    elif query.data.startswith('delete_country_'):
+        country_code = query.data[15:]  # Remove 'delete_country_' prefix
+        country = await db_manager.get_country_by_code(country_code)
+        
+        if country:
+            keyboard = [
+                [InlineKeyboardButton("✅ نعم، احذف الدولة", callback_data=f"confirm_delete_country_{country_code}")],
+                [InlineKeyboardButton("❌ إلغاء", callback_data='delete_countries')]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await safe_edit_message(
+                query,
+                f"⚠️ تأكيد حذف الدولة\n\n"
+                f"🌍 الدولة: {country['flag']} {country['name']} ({country['code']})\n\n"
+                f"هل أنت متأكد من حذف هذه الدولة؟\n"
+                f"⚠️ سيتم إخفاؤها من قائمة الدول المتاحة للمستخدمين.",
+                reply_markup
+            )
+        else:
+            keyboard = [[InlineKeyboardButton("🔙 العودة لحذف الدول", callback_data='delete_countries')]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await safe_edit_message(query, f"❌ لم يتم العثور على الدولة {country_code}", reply_markup)
+    
+    elif query.data.startswith('confirm_delete_country_'):
+        country_code = query.data[23:]  # Remove 'confirm_delete_country_' prefix
+        success = await db_manager.delete_country(country_code)
+        
+        if success:
+            keyboard = [[InlineKeyboardButton("🔙 العودة لإدارة الدول", callback_data='manage_countries')]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await safe_edit_message(query, "✅ تم حذف الدولة بنجاح!", reply_markup)
+        else:
+            keyboard = [[InlineKeyboardButton("🔙 العودة لحذف الدول", callback_data='delete_countries')]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await safe_edit_message(query, f"❌ فشل في حذف الدولة {country_code}", reply_markup)
+
     # Handle individual website actions
     elif query.data.startswith('edit_website_'):
         website_id = query.data[13:]  # Remove 'edit_website_' prefix
@@ -1071,16 +1296,17 @@ async def order_button_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     # Handle country selection for card addition
     elif query.data.startswith('country_select_'):
         country_code = query.data.split('_')[2]  # Extract country code
-        if country_code in COUNTRIES:
+        country = await db_manager.get_country_by_code(country_code)
+        if country and country.get('is_active', True):
             context.user_data['country_code'] = country_code
-            context.user_data['country_name'] = COUNTRIES[country_code]['name']
+            context.user_data['country_name'] = country['name']
             context.user_data['card_step'] = 'price'
             
             keyboard = [[InlineKeyboardButton("❌ إلغاء", callback_data='manage_cards')]]
             reply_markup = InlineKeyboardMarkup(keyboard)
             await safe_edit_message(
                 query,
-                f"✅ الدولة: {COUNTRIES[country_code]['flag']} {COUNTRIES[country_code]['name']}\n\n3️⃣ يرجى إدخال سعر البطاقة بالدولار (مثال: 25.00):",
+                f"✅ الدولة: {country['flag']} {country['name']}\n\n3️⃣ يرجى إدخال سعر البطاقة بالدولار (مثال: 25.00):",
                 reply_markup
             )
     
@@ -1422,19 +1648,19 @@ async def handle_card_addition_text(update: Update, context: ContextTypes.DEFAUL
             context.user_data['card_type'] = text
             context.user_data['card_step'] = 'country_selection'
             
-            # Create country selection keyboard
+            # Create country selection keyboard from database
+            countries = await db_manager.get_available_countries()
             keyboard = []
-            countries_list = list(COUNTRIES.items())
             
             # Create rows of 2 countries each
-            for i in range(0, len(countries_list), 2):
+            for i in range(0, len(countries), 2):
                 row = []
                 for j in range(2):
-                    if i + j < len(countries_list):
-                        code, info = countries_list[i + j]
+                    if i + j < len(countries):
+                        country = countries[i + j]
                         row.append(InlineKeyboardButton(
-                            f"{info['flag']} {code}",
-                            callback_data=f"country_select_{code}"
+                            f"{country['flag']} {country['code']}",
+                            callback_data=f"country_select_{country['code']}"
                         ))
                 keyboard.append(row)
             
@@ -1768,24 +1994,15 @@ async def ensure_country_exists(country_code, country_name):
     """Ensure a country exists in the countries collection"""
     try:
         # Check if country already exists
-        existing_country = await db_manager.countries.find_one({"code": country_code})
+        existing_country = await db_manager.get_country_by_code(country_code)
         
         if not existing_country:
-            # Get flag from COUNTRIES dict
-            country_info = COUNTRIES.get(country_code, {})
-            flag = country_info.get('flag', '🌍')
+            # Use default flag if country doesn't exist
+            flag = '🌍'  # Default flag for unknown countries
             
-            # Add country to countries collection
-            country_data = {
-                "code": country_code,
-                "name": country_name,
-                "flag": flag,
-                "is_active": True,
-                "created_at": datetime.now(UTC)
-            }
-            
-            result = await db_manager.countries.insert_one(country_data)
-            if result.inserted_id:
+            # Add country to countries collection using database manager
+            success = await db_manager.add_country(country_code, country_name, flag)
+            if success:
                 logger.info(f"Added new country: {country_code} - {country_name}")
             else:
                 logger.error(f"Failed to add country: {country_code}")
@@ -2074,6 +2291,199 @@ async def handle_black_website_editing(update: Update, context: ContextTypes.DEF
     except Exception as e:
         logger.error(f"Error in black website editing: {e}")
         await update.message.reply_text("❌ حدث خطأ. يرجى المحاولة مرة أخرى.")
+
+
+async def handle_country_addition_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle text input for adding new countries"""
+    user = update.effective_user
+    
+    # Check if user is admin
+    admin_id = os.getenv('ADMIN_USER_ID')
+    if not admin_id or str(user.id) != admin_id:
+        return
+    
+    # Check if we're adding a country
+    if not context.user_data.get('adding_country'):
+        return
+    
+    step = context.user_data.get('country_step')
+    text = update.message.text
+    
+    try:
+        if step == 'code':
+            # Validate country code (2-3 uppercase letters)
+            if not text.isalpha() or len(text) < 2 or len(text) > 3:
+                await update.message.reply_text("❌ يرجى إدخال رمز دولة صحيح (2-3 أحرف إنجليزية)")
+                return
+            
+            # Check if country already exists
+            existing_country = await db_manager.get_country_by_code(text.upper())
+            if existing_country:
+                keyboard = [[InlineKeyboardButton("🔙 العودة لإدارة الدول", callback_data='manage_countries')]]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                await update.message.reply_text(
+                    f"❌ الدولة {text.upper()} موجودة بالفعل في النظام\n\n"
+                    f"الاسم الحالي: {existing_country['name']}\n"
+                    f"العلم الحالي: {existing_country['flag']}",
+                    reply_markup=reply_markup
+                )
+                # Clear the adding state since we're not adding anymore
+                context.user_data.pop('adding_country', None)
+                context.user_data.pop('country_step', None)
+                context.user_data.pop('country_code', None)
+                context.user_data.pop('country_name', None)
+                return
+            
+            context.user_data['country_code'] = text.upper()
+            context.user_data['country_step'] = 'name'
+            
+            keyboard = [[InlineKeyboardButton("❌ إلغاء", callback_data='manage_countries')]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await update.message.reply_text(
+                f"✅ رمز الدولة: {text.upper()}\n\n2️⃣ ادخل اسم الدولة باللغة العربية:",
+                reply_markup=reply_markup
+            )
+        
+        elif step == 'name':
+            context.user_data['country_name'] = text
+            context.user_data['country_step'] = 'flag'
+            
+            keyboard = [[InlineKeyboardButton("❌ إلغاء", callback_data='manage_countries')]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await update.message.reply_text(
+                f"✅ اسم الدولة: {text}\n\n3️⃣ ادخل رمز العلم (emoji):",
+                reply_markup=reply_markup
+            )
+        
+        elif step == 'flag':
+            # Create the country
+            success = await db_manager.add_country(
+                code=context.user_data['country_code'],
+                name=context.user_data['country_name'],
+                flag=text
+            )
+            
+            if success:
+                keyboard = [[InlineKeyboardButton("🔙 العودة لإدارة الدول", callback_data='manage_countries')]]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                await update.message.reply_text(
+                    f"✅ تم إضافة الدولة بنجاح!\n\n"
+                    f"🌍 الرمز: {context.user_data['country_code']}\n"
+                    f"📝 الاسم: {context.user_data['country_name']}\n"
+                    f"🏳️ العلم: {text}",
+                    reply_markup=reply_markup
+                )
+            else:
+                await update.message.reply_text("❌ حدث خطأ في إضافة الدولة. يرجى المحاولة مرة أخرى.")
+            
+            # Clear user data
+            context.user_data.pop('adding_country', None)
+            context.user_data.pop('country_step', None)
+            context.user_data.pop('country_code', None)
+            context.user_data.pop('country_name', None)
+        
+    except Exception as e:
+        logger.error(f"Error in country addition: {e}")
+        await update.message.reply_text("❌ حدث خطأ. يرجى المحاولة مرة أخرى.")
+
+
+async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Route text input to appropriate handler based on context"""
+    # Log current context for debugging
+    logger.info(f"Text input routing - user_data keys: {list(context.user_data.keys())}")
+    
+    # Check what type of input we're expecting
+    if context.user_data.get('adding_card'):
+        logger.info("Routing to card addition handler")
+        await handle_card_addition_text(update, context)
+    elif context.user_data.get('adding_black_website'):
+        logger.info("Routing to black website addition handler")
+        await handle_black_website_addition_text(update, context)
+    elif context.user_data.get('editing_black_website'):
+        logger.info("Routing to black website editing handler")
+        await handle_black_website_editing(update, context)
+    elif context.user_data.get('adding_country'):
+        logger.info("Routing to country addition handler")
+        await handle_country_addition_text(update, context)
+    elif context.user_data.get('editing_country'):
+        logger.info("Routing to country editing handler")
+        await handle_country_editing(update, context)
+    else:
+        logger.info("No matching context found for text input")
+
+
+async def handle_country_editing(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle text input for editing countries"""
+    user = update.effective_user
+    
+    # Check if user is admin
+    admin_id = os.getenv('ADMIN_USER_ID')
+    if not admin_id or str(user.id) != admin_id:
+        return
+    
+    # Check if we're editing a country
+    if not context.user_data.get('editing_country'):
+        return
+    
+    country_code = context.user_data.get('editing_country')
+    step = context.user_data.get('country_step')
+    text = update.message.text
+    
+    logger.info(f"Country editing: code={country_code}, step={step}, text={text}")
+    
+    try:
+        # First verify the country exists
+        existing_country = await db_manager.get_country_by_code(country_code)
+        if not existing_country:
+            keyboard = [[InlineKeyboardButton("🔙 العودة لإدارة الدول", callback_data='manage_countries')]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await update.message.reply_text(
+                f"❌ لم يتم العثور على الدولة {country_code} في قاعدة البيانات.",
+                reply_markup=reply_markup
+            )
+            # Clear editing state
+            context.user_data.pop('editing_country', None)
+            context.user_data.pop('country_step', None)
+            return
+        
+        success = False
+        if step == 'name':
+            success = await db_manager.update_country(country_code, name=text)
+        elif step == 'flag':
+            success = await db_manager.update_country(country_code, flag=text)
+        
+        if success:
+            keyboard = [[InlineKeyboardButton("🔙 العودة لإدارة الدول", callback_data='manage_countries')]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            field_name = "الاسم" if step == 'name' else "العلم"
+            await update.message.reply_text(
+                f"✅ تم تحديث {field_name} للدولة {country_code} بنجاح!\n"
+                f"القيمة الجديدة: {text}",
+                reply_markup=reply_markup
+            )
+        else:
+            keyboard = [[InlineKeyboardButton("🔙 العودة لإدارة الدول", callback_data='manage_countries')]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await update.message.reply_text(
+                f"❌ فشل في تحديث الدولة {country_code}. تحقق من أن القيمة مختلفة عن القيمة الحالية.",
+                reply_markup=reply_markup
+            )
+        
+        # Clear editing state
+        context.user_data.pop('editing_country', None)
+        context.user_data.pop('country_step', None)
+        
+    except Exception as e:
+        logger.error(f"Error in country editing: {e}")
+        keyboard = [[InlineKeyboardButton("🔙 العودة لإدارة الدول", callback_data='manage_countries')]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.message.reply_text(
+            f"❌ حدث خطأ في تحديث الدولة: {str(e)}",
+            reply_markup=reply_markup
+        )
+        # Clear editing state
+        context.user_data.pop('editing_country', None)
+        context.user_data.pop('country_step', None)
 
 
 async def complete_order(order_id):
@@ -2443,7 +2853,7 @@ def main() -> None:
     application.add_handler(CommandHandler("start", start_order_bot))
     application.add_handler(CallbackQueryHandler(order_button_handler))
     application.add_handler(MessageHandler(filters.PHOTO, handle_card_image_upload))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_card_addition_text))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_input))
     
     # Get webhook configuration
     WEBHOOK_URL = os.getenv('ORDER_WEBHOOK_URL')
