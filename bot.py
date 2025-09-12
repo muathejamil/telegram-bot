@@ -236,7 +236,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             keyboard = []
             for card_group in grouped_cards:
                 # Format: "Visa 20.0 ب USDT (5)"
-                card_text = f"{card_group['card_type']} {card_group['price']} ب USDT ({card_group['count']})"
+                card_text = f"{card_group['card_type']} {card_group['price']} USDT ({card_group['count']})"
                 # Use card_group format for callback data: cardgroup_countrycode_cardtype_price
                 callback_data = f"cardgroup_{country_code}_{card_group['card_type'].replace(' ', '_')}_{card_group['price']}"
                 keyboard.append([InlineKeyboardButton(
