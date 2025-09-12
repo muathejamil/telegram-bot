@@ -2220,10 +2220,14 @@ async def get_user_orders(user_id):
 async def charge_user_balance(user_id, amount):
     """Charge user balance and create notification"""
     try:
+        logger.info(f"Starting balance charge for user {user_id} with amount ${amount:.2f}")
+        
         # Update user balance
         success = await db_manager.update_user_balance(user_id, amount)
         
         if success:
+            logger.info(f"Successfully updated balance for user {user_id}")
+            
             # Create transaction record
             await db_manager.create_transaction(
                 user_id=user_id,
@@ -2234,6 +2238,7 @@ async def charge_user_balance(user_id, amount):
             
             # Get updated balance
             new_balance = await db_manager.get_user_balance(user_id)
+            logger.info(f"New balance for user {user_id}: ${new_balance:.2f}")
             
             # Create notification for customer
             notification_data = {
@@ -2243,9 +2248,16 @@ async def charge_user_balance(user_id, amount):
                 "message": f"💰 تم شحن رصيدك بمبلغ ${amount:.2f}\n\n💳 رصيدك الحالي: ${new_balance:.2f}\n\n🎉 يمكنك الآن شراء البطاقات!"
             }
             
-            await db_manager.create_notification("balance_updated", notification_data)
+            notification_id = await db_manager.create_notification("balance_updated", notification_data)
+            if notification_id:
+                logger.info(f"Created balance notification {notification_id} for user {user_id}")
+            else:
+                logger.error(f"Failed to create balance notification for user {user_id}")
+            
             logger.info(f"Charged user {user_id} with ${amount:.2f}")
             return True
+        else:
+            logger.error(f"Failed to update balance for user {user_id}")
         
         return False
         
@@ -2289,20 +2301,26 @@ async def toggle_user_block_status(user_id, should_block):
 
 
 async def process_notifications(application):
-    """Background task to process pending notifications"""
+    """Background task to process pending notifications for order bot (only new_order notifications)"""
     while True:
         try:
             # Get pending notifications
             notifications = await db_manager.get_pending_notifications()
             
-            for notification in notifications:
+            # Filter to only process new_order notifications
+            order_notifications = [n for n in notifications if n.get('type') == 'new_order']
+            
+            if order_notifications:
+                logger.info(f"Order bot found {len(order_notifications)} new order notifications to process")
+            
+            for notification in order_notifications:
                 await handle_notification(application, notification)
                 
             # Wait 5 seconds before checking again
             await asyncio.sleep(5)
             
         except Exception as e:
-            logger.error(f"Error in notification processing: {e}")
+            logger.error(f"Error in order notification processing: {e}")
             await asyncio.sleep(10)  # Wait longer on error
 
 
@@ -2314,10 +2332,12 @@ async def handle_notification(application, notification):
         
         if notification_type == 'new_order':
             await send_order_notification(application, data)
-        
-        # Mark notification as processed
-        await db_manager.mark_notification_processed(notification['notification_id'])
-        logger.info(f"Processed notification {notification['notification_id']}")
+            # Mark notification as processed only if we handled it
+            await db_manager.mark_notification_processed(notification['notification_id'])
+            logger.info(f"Processed notification {notification['notification_id']}")
+        else:
+            # Don't process notifications that should be handled by the customer bot
+            logger.debug(f"Skipping notification {notification['notification_id']} of type {notification_type} - should be handled by customer bot")
         
     except Exception as e:
         logger.error(f"Error handling notification {notification.get('notification_id')}: {e}")

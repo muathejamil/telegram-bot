@@ -545,21 +545,32 @@ async def process_card_delivery_notifications(application):
             # Get pending card delivery notifications
             notifications = await db_manager.get_pending_notifications()
             
+            if notifications:
+                logger.info(f"Found {len(notifications)} pending notifications to process")
+            
             for notification in notifications:
-                if notification.get('type') == 'deliver_card':
+                notification_type = notification.get('type')
+                notification_id = notification.get('notification_id')
+                logger.info(f"Processing notification {notification_id} of type {notification_type}")
+                
+                if notification_type == 'deliver_card':
                     await handle_card_delivery(application, notification)
-                elif notification.get('type') == 'deliver_card_image':
+                elif notification_type == 'deliver_card_image':
                     await handle_card_image_delivery(application, notification)
-                elif notification.get('type') == 'order_completed':
+                elif notification_type == 'order_completed':
                     await handle_order_status_notification(application, notification)
-                elif notification.get('type') == 'order_cancelled':
+                elif notification_type == 'order_cancelled':
                     await handle_order_status_notification(application, notification)
-                elif notification.get('type') == 'balance_updated':
+                elif notification_type == 'balance_updated':
                     await handle_balance_notification(application, notification)
-                elif notification.get('type') == 'user_blocked':
+                elif notification_type == 'user_blocked':
                     await handle_block_notification(application, notification)
-                elif notification.get('type') == 'user_unblocked':
+                elif notification_type == 'user_unblocked':
                     await handle_block_notification(application, notification)
+                else:
+                    logger.warning(f"Unknown notification type: {notification_type} for notification {notification_id}")
+                    # Mark unknown notification types as processed to avoid infinite loop
+                    await db_manager.mark_notification_processed(notification_id)
                     
             # Wait 5 seconds before checking again
             await asyncio.sleep(5)
@@ -739,6 +750,8 @@ async def handle_balance_notification(application, notification):
         user_id = data.get('user_id')
         message = data.get('message')
         
+        logger.info(f"Processing balance notification for user {user_id}: {notification.get('notification_id')}")
+        
         if not user_id or not message:
             logger.error(f"Invalid balance notification data: {data}")
             await db_manager.mark_notification_processed(notification['notification_id'])
@@ -752,10 +765,15 @@ async def handle_balance_notification(application, notification):
         
         # Mark notification as processed
         await db_manager.mark_notification_processed(notification['notification_id'])
-        logger.info(f"Balance notification sent to user {user_id}")
+        logger.info(f"Balance notification sent successfully to user {user_id}")
         
     except Exception as e:
-        logger.error(f"Error handling balance notification {notification['notification_id']}: {e}")
+        logger.error(f"Error handling balance notification {notification.get('notification_id')}: {e}")
+        # For certain errors (like user blocked bot), mark as processed to avoid infinite retry
+        error_str = str(e).lower()
+        if any(phrase in error_str for phrase in ['blocked', 'not found', 'forbidden', 'chat not found']):
+            logger.warning(f"User {user_id} appears to have blocked the bot or chat not found. Marking notification as processed.")
+            await db_manager.mark_notification_processed(notification['notification_id'])
 
 
 async def handle_block_notification(application, notification):
