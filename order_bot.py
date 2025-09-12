@@ -900,6 +900,52 @@ async def order_button_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         reply_markup = InlineKeyboardMarkup(keyboard)
         await safe_edit_message(query, stats_text, reply_markup)
     
+    # Handle user orders view
+    elif query.data.startswith('user_orders_'):
+        user_id = int(query.data[12:])  # Remove 'user_orders_' prefix
+        orders = await get_user_orders(user_id)
+        
+        if orders:
+            orders_text = f"📋 طلبات المستخدم #{user_id}:\n\n"
+            for i, order in enumerate(orders[:10], 1):
+                status_icon = {"pending": "⏳", "completed": "✅", "cancelled": "❌"}.get(order['status'], "❓")
+                orders_text += f"{i}. {status_icon} #{order['order_id'][:8]} - ${order['amount']:.2f}\n"
+            
+            keyboard = [[InlineKeyboardButton("🔙 العودة لتفاصيل المستخدم", callback_data=f'user_{user_id}')]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await safe_edit_message(query, orders_text, reply_markup)
+        else:
+            keyboard = [[InlineKeyboardButton("🔙 العودة لتفاصيل المستخدم", callback_data=f'user_{user_id}')]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await safe_edit_message(query, f"📭 لا توجد طلبات للمستخدم #{user_id}", reply_markup)
+    
+    elif query.data.startswith('user_transactions_'):
+        user_id = int(query.data[18:])  # Remove 'user_transactions_' prefix
+        transactions = await db_manager.get_user_transactions(user_id, 10)
+        
+        if transactions:
+            trans_text = f"💳 معاملات المستخدم #{user_id}:\n\n"
+            for i, trans in enumerate(transactions, 1):
+                trans_type = trans.get('type', 'غير محدد')
+                amount = trans.get('amount', 0.0)
+                description = trans.get('description', 'غير محدد')
+                created_at = trans.get('created_at', datetime.now(UTC))
+                
+                if isinstance(created_at, datetime):
+                    date_str = created_at.strftime('%m-%d %H:%M')
+                else:
+                    date_str = 'غير محدد'
+                
+                trans_text += f"{i}. {trans_type} - ${amount:.2f} | {date_str}\n   {description}\n\n"
+            
+            keyboard = [[InlineKeyboardButton("🔙 العودة لتفاصيل المستخدم", callback_data=f'user_{user_id}')]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await safe_edit_message(query, trans_text, reply_markup)
+        else:
+            keyboard = [[InlineKeyboardButton("🔙 العودة لتفاصيل المستخدم", callback_data=f'user_{user_id}')]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await safe_edit_message(query, f"💳 لا توجد معاملات للمستخدم #{user_id}", reply_markup)
+    
     # Handle individual user actions
     elif query.data.startswith('user_'):
         user_id = int(query.data[5:])  # Remove 'user_' prefix
@@ -1021,52 +1067,6 @@ async def order_button_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             keyboard = [[InlineKeyboardButton("🔙 العودة لحظر المستخدمين", callback_data='block_users')]]
             reply_markup = InlineKeyboardMarkup(keyboard)
             await safe_edit_message(query, f"❌ فشل في تغيير حالة المستخدم #{user_id}", reply_markup)
-    
-    # Handle user orders view
-    elif query.data.startswith('user_orders_'):
-        user_id = int(query.data[12:])  # Remove 'user_orders_' prefix
-        orders = await get_user_orders(user_id)
-        
-        if orders:
-            orders_text = f"📋 طلبات المستخدم #{user_id}:\n\n"
-            for i, order in enumerate(orders[:10], 1):
-                status_icon = {"pending": "⏳", "completed": "✅", "cancelled": "❌"}.get(order['status'], "❓")
-                orders_text += f"{i}. {status_icon} #{order['order_id'][:8]} - ${order['amount']:.2f}\n"
-            
-            keyboard = [[InlineKeyboardButton("🔙 العودة لتفاصيل المستخدم", callback_data=f'user_{user_id}')]]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            await safe_edit_message(query, orders_text, reply_markup)
-        else:
-            keyboard = [[InlineKeyboardButton("🔙 العودة لتفاصيل المستخدم", callback_data=f'user_{user_id}')]]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            await safe_edit_message(query, f"📭 لا توجد طلبات للمستخدم #{user_id}", reply_markup)
-    
-    elif query.data.startswith('user_transactions_'):
-        user_id = int(query.data[18:])  # Remove 'user_transactions_' prefix
-        transactions = await db_manager.get_user_transactions(user_id, 10)
-        
-        if transactions:
-            trans_text = f"💳 معاملات المستخدم #{user_id}:\n\n"
-            for i, trans in enumerate(transactions, 1):
-                trans_type = trans.get('type', 'غير محدد')
-                amount = trans.get('amount', 0.0)
-                description = trans.get('description', 'غير محدد')
-                created_at = trans.get('created_at', datetime.now(UTC))
-                
-                if isinstance(created_at, datetime):
-                    date_str = created_at.strftime('%m-%d %H:%M')
-                else:
-                    date_str = 'غير محدد'
-                
-                trans_text += f"{i}. {trans_type} - ${amount:.2f} | {date_str}\n   {description}\n\n"
-            
-            keyboard = [[InlineKeyboardButton("🔙 العودة لتفاصيل المستخدم", callback_data=f'user_{user_id}')]]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            await safe_edit_message(query, trans_text, reply_markup)
-        else:
-            keyboard = [[InlineKeyboardButton("🔙 العودة لتفاصيل المستخدم", callback_data=f'user_{user_id}')]]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            await safe_edit_message(query, f"💳 لا توجد معاملات للمستخدم #{user_id}", reply_markup)
     
     # Handle country selection for card addition
     elif query.data.startswith('country_select_'):
