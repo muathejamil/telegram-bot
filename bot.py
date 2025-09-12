@@ -730,6 +730,21 @@ async def handle_card_image_delivery(application, notification):
 
 
 
+async def handle_text_messages(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle text messages by directing users to use /start command"""
+    user = update.effective_user
+    
+    # Check if user is blacklisted
+    if await db_manager.is_blacklisted(user.id):
+        return  # Silently ignore messages from blacklisted users
+    
+    # Send a polite message directing to /start
+    await update.message.reply_text(
+        "مرحباً! 👋\n\nيرجى استخدام الأمر /start للبدء في استخدام البوت.",
+        reply_to_message_id=update.message.message_id
+    )
+
+
 async def startup_database(application):
     """Initialize database connection and start notification processor"""
     try:
@@ -862,6 +877,8 @@ def main() -> None:
     # Add command and message handlers
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CallbackQueryHandler(button_handler))
+    # Handle all text messages (non-commands) by directing users to /start
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_messages))
 
     # Get webhook configuration
     WEBHOOK_URL = os.getenv('WEBHOOK_URL')
