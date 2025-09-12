@@ -1165,7 +1165,7 @@ async def order_button_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             reply_markup = InlineKeyboardMarkup(keyboard)
             await safe_edit_message(query, "❌ فشل في تغيير حالة البطاقة", reply_markup)
     
-    elif query.data.startswith('confirm_remove_'):
+    elif query.data.startswith('confirm_remove_') and not query.data.startswith('confirm_remove_group_'):
         card_id = query.data[15:]  # Remove 'confirm_remove_' prefix
         success = await remove_card_from_database(card_id)
         
