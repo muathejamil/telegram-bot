@@ -377,10 +377,12 @@ async def order_button_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         if cards:
             cards_text = "📋 جميع البطاقات:\n\n"
             for card in cards[:10]:  # Show first 10 cards
-                status = "✅ متاحة" if card.get('is_available') else "❌ غير متاحة"
+                available_count = card.get('number_of_available_cards', 0)
+                status = f"✅ متاحة ({available_count})" if card.get('is_available') and available_count > 0 else "❌ غير متاحة"
                 cards_text += f"🏷️ {card['card_type']}\n"
                 cards_text += f"🌍 {card.get('country_name', 'غير محدد')}\n"
                 cards_text += f"💰 {card['price']} USDT\n"
+                cards_text += f"💳 القيمة: {card.get('value', card['price'])} USDT\n"
                 cards_text += f"📊 {status}\n\n"
             
             keyboard = [[InlineKeyboardButton("🔙 العودة لإدارة البطاقات", callback_data='manage_cards')]]
@@ -397,8 +399,9 @@ async def order_button_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         if cards:
             keyboard = []
             for card in cards[:20]:  # Limit to 20 cards to avoid message length issues
-                status_icon = "✅" if card['is_available'] else "❌"
-                card_text = f"{status_icon} {card['card_type']} - {card['country_code']} (${card['price']})"
+                available_count = card.get('number_of_available_cards', 0)
+                status_icon = "✅" if card['is_available'] and available_count > 0 else "❌"
+                card_text = f"{status_icon} {card['card_type']} - {card['country_code']} (${card['price']}) ({available_count})"
                 keyboard.append([InlineKeyboardButton(
                     card_text,
                     callback_data=f"edit_card_{card['card_id']}"
@@ -1089,13 +1092,14 @@ async def order_button_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         if card:
             keyboard = [
                 [InlineKeyboardButton("💰 تعديل السعر", callback_data=f"edit_price_{card_id}")],
-                [InlineKeyboardButton("💳 تعديل القيمة", callback_data=f"edit_value_{card_id}")],
                 [InlineKeyboardButton("🏷️ تعديل النوع", callback_data=f"edit_type_{card_id}")],
+                [InlineKeyboardButton("🔢 تعديل العدد المتاح", callback_data=f"edit_count_{card_id}")],
                 [InlineKeyboardButton("🔙 العودة لقائمة التعديل", callback_data='edit_cards')]
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
             
-            status = "متاحة" if card['is_available'] else "غير متاحة"
+            available_count = card.get('number_of_available_cards', 0)
+            status = f"متاحة ({available_count})" if card['is_available'] and available_count > 0 else "غير متاحة"
             country_info = COUNTRIES.get(card['country_code'], {})
             flag = country_info.get('flag', '🌍')
             
@@ -1107,6 +1111,7 @@ async def order_button_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 🌍 الدولة: {flag} {card['country_name']}
 💰 السعر: ${card['price']}
 💳 القيمة: ${card['value']}
+🔢 العدد المتاح: {available_count}
 📊 الحالة: {status}
 
 اختر ما تريد تعديله:
@@ -1278,19 +1283,6 @@ async def order_button_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             reply_markup
         )
     
-    elif query.data.startswith('edit_value_'):
-        card_id = query.data[11:]  # Remove 'edit_value_' prefix
-        context.user_data['editing_card'] = card_id
-        context.user_data['edit_field'] = 'value'
-        
-        keyboard = [[InlineKeyboardButton("❌ إلغاء", callback_data=f'edit_card_{card_id}')]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        # await safe_edit_message(
-        #     query,
-        #     "💳 تعديل القيمة\n\nأدخل قيمة البطاقة الجديدة (مثال: 25.00):",
-        #     reply_markup
-        # )
-    
     elif query.data.startswith('edit_type_'):
         card_id = query.data[10:]  # Remove 'edit_type_' prefix
         context.user_data['editing_card'] = card_id
@@ -1301,6 +1293,19 @@ async def order_button_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         await safe_edit_message(
             query,
             "🏷️ تعديل نوع البطاقة\n\nأدخل نوع البطاقة الجديد (مثال: VISA 50$):",
+            reply_markup
+        )
+    
+    elif query.data.startswith('edit_count_'):
+        card_id = query.data[11:]  # Remove 'edit_count_' prefix
+        context.user_data['editing_card'] = card_id
+        context.user_data['edit_field'] = 'number_of_available_cards'
+        
+        keyboard = [[InlineKeyboardButton("❌ إلغاء", callback_data=f'edit_card_{card_id}')]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await safe_edit_message(
+            query,
+            "🔢 تعديل العدد المتاح\n\nأدخل العدد الجديد للبطاقات المتاحة (مثال: 10):",
             reply_markup
         )
     
@@ -1537,15 +1542,21 @@ async def handle_card_editing(update: Update, context: ContextTypes.DEFAULT_TYPE
             except ValueError:
                 await update.message.reply_text("❌ يرجى إدخال رقم صحيح للسعر (مثال: 25.00)")
                 return
-        elif field == 'value':
-            try:
-                value = float(text)
-                success = await update_card_field(card_id, 'value', value)
-            except ValueError:
-                await update.message.reply_text("❌ يرجى إدخال رقم صحيح للقيمة (مثال: 25.00)")
-                return
         elif field == 'card_type':
             success = await update_card_field(card_id, 'card_type', text)
+        elif field == 'number_of_available_cards':
+            try:
+                count = int(text)
+                if count < 0:
+                    await update.message.reply_text("❌ يرجى إدخال عدد أكبر من أو يساوي صفر")
+                    return
+                success = await update_card_field(card_id, 'number_of_available_cards', count)
+                # Update availability status based on count
+                if success:
+                    await update_card_field(card_id, 'is_available', count > 0)
+            except ValueError:
+                await update.message.reply_text("❌ يرجى إدخال رقم صحيح للعدد (مثال: 10)")
+                return
         
         # Clear editing context
         context.user_data.pop('editing_card', None)
@@ -1691,67 +1702,65 @@ async def add_card_to_database(card_data):
 
 
 async def add_bulk_cards_to_database(card_base_data, quantity):
-    """Add multiple cards to the database"""
+    """Add a single card with specified quantity to the database"""
     try:
         # First, ensure the country exists in the countries collection
         await ensure_country_exists(card_base_data['country_code'], card_base_data['country_name'])
         
-        # Find the highest existing card number for this card type
+        # Create unique card ID
         base_pattern = f"{card_base_data['country_code']}_{card_base_data['card_type'].replace(' ', '_')}_{int(card_base_data['value'])}"
         
-        # Find existing cards with this pattern
-        existing_cards = await db_manager.cards.find({
-            "card_id": {"$regex": f"^{base_pattern}_\\d+$"}
-        }).to_list(None)
+        # Check if a card with this exact specification already exists
+        existing_card = await db_manager.cards.find_one({
+            "country_code": card_base_data['country_code'],
+            "card_type": card_base_data['card_type'],
+            "price": card_base_data['price'],
+            "value": card_base_data['value'],
+            "is_deleted": {"$ne": True}
+        })
         
-        # Extract numbers from existing card IDs to find the next available number
-        existing_numbers = []
-        for card in existing_cards:
-            card_id = card.get('card_id', '')
-            if card_id.startswith(base_pattern + '_'):
-                try:
-                    number_part = card_id.split('_')[-1]
-                    existing_numbers.append(int(number_part))
-                except (ValueError, IndexError):
-                    continue
-        
-        # Find the next available starting number
-        start_number = 1
-        if existing_numbers:
-            start_number = max(existing_numbers) + 1
-        
-        success_count = 0
-        
-        for i in range(quantity):
-            # Create unique card ID for each card
+        if existing_card:
+            # If card exists, increment the available count
+            result = await db_manager.cards.update_one(
+                {"card_id": existing_card['card_id']},
+                {
+                    "$inc": {"number_of_available_cards": quantity},
+                    "$set": {
+                        "is_available": True,
+                        "updated_at": datetime.now(UTC)
+                    }
+                }
+            )
+            
+            if result.modified_count > 0:
+                logger.info(f"Updated existing card {existing_card['card_id']} with {quantity} additional units")
+                return quantity
+            else:
+                logger.error(f"Failed to update existing card {existing_card['card_id']}")
+                return 0
+        else:
+            # Create new card with the specified quantity
+            card_id = f"{base_pattern}_{int(datetime.now(UTC).timestamp())}"
             card_data = card_base_data.copy()
-            card_number = start_number + i
-            card_id = f"{base_pattern}_{card_number:03d}"
             card_data['card_id'] = card_id
+            card_data['number_of_available_cards'] = quantity
             
             try:
                 # Insert card into database
                 result = await db_manager.cards.insert_one(card_data)
                 
                 if result.inserted_id:
-                    success_count += 1
-                    logger.info(f"Added bulk card {i+1}/{quantity}: {card_id}")
+                    logger.info(f"Added new card {card_id} with {quantity} units")
+                    return quantity
                 else:
-                    logger.error(f"Failed to add bulk card {i+1}/{quantity}: {card_id}")
+                    logger.error(f"Failed to add new card {card_id}")
+                    return 0
             except Exception as insert_error:
-                # Handle duplicate key errors gracefully
-                if "E11000" in str(insert_error) or "duplicate key" in str(insert_error):
-                    logger.warning(f"Card {card_id} already exists, skipping...")
-                    continue
-                else:
-                    logger.error(f"Error inserting card {card_id}: {insert_error}")
-                    continue
-        
-        logger.info(f"Successfully added {success_count}/{quantity} cards")
-        return success_count
+                logger.error(f"Error inserting card {card_id}: {insert_error}")
+                return 0
         
     except Exception as e:
-        logger.error(f"Error adding bulk cards to database: {e}")
+        logger.error(f"Error adding card to database: {e}")
         return 0
 
 

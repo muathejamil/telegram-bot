@@ -113,7 +113,11 @@ class DatabaseManager:
     async def get_available_cards(self) -> List[Dict[str, Any]]:
         """Get all available cards"""
         try:
-            cards = await self.cards.find({"is_available": True}).to_list(length=None)
+            cards = await self.cards.find({
+                "is_available": True,
+                "number_of_available_cards": {"$gt": 0},
+                "is_deleted": {"$ne": True}
+            }).to_list(length=None)
             return cards
         except Exception as e:
             logger.error(f"Error getting available cards: {e}")
@@ -129,21 +133,61 @@ class DatabaseManager:
             return None
     
     async def reserve_card(self, card_id: str, user_id: int) -> bool:
-        """Reserve a card for a user"""
+        """Reserve a card for a user by decrementing available count"""
+        try:
+            # First check if card has available units
+            card = await self.cards.find_one({
+                "card_id": card_id,
+                "is_available": True,
+                "number_of_available_cards": {"$gt": 0}
+            })
+            
+            if not card:
+                return False
+            
+            # Decrement the available count
+            result = await self.cards.update_one(
+                {
+                    "card_id": card_id,
+                    "is_available": True,
+                    "number_of_available_cards": {"$gt": 0}
+                },
+                {
+                    "$inc": {"number_of_available_cards": -1},
+                    "$set": {"updated_at": datetime.now(UTC)}
+                }
+            )
+            
+            # If this was the last card, mark as unavailable
+            if result.modified_count > 0:
+                updated_card = await self.cards.find_one({"card_id": card_id})
+                if updated_card and updated_card.get("number_of_available_cards", 0) <= 0:
+                    await self.cards.update_one(
+                        {"card_id": card_id},
+                        {"$set": {"is_available": False}}
+                    )
+            
+            return result.modified_count > 0
+        except Exception as e:
+            logger.error(f"Error reserving card {card_id}: {e}")
+            return False
+    
+    async def restore_card_availability(self, card_id: str) -> bool:
+        """Restore card availability by incrementing available count (for cancelled orders)"""
         try:
             result = await self.cards.update_one(
-                {"card_id": card_id, "is_available": True},
+                {"card_id": card_id, "is_deleted": {"$ne": True}},
                 {
+                    "$inc": {"number_of_available_cards": 1},
                     "$set": {
-                        "is_available": False,
-                        "reserved_by": user_id,
-                        "reserved_at": datetime.now(UTC)
+                        "is_available": True,
+                        "updated_at": datetime.now(UTC)
                     }
                 }
             )
             return result.modified_count > 0
         except Exception as e:
-            logger.error(f"Error reserving card {card_id}: {e}")
+            logger.error(f"Error restoring card {card_id}: {e}")
             return False
     
     # Transaction operations
@@ -229,6 +273,7 @@ class DatabaseManager:
             cards = await self.cards.find({
                 "country_code": country_code,
                 "is_available": True,
+                "number_of_available_cards": {"$gt": 0},
                 "is_deleted": {"$ne": True}  # Exclude deleted cards
             }).to_list(length=None)
             return cards
@@ -239,46 +284,27 @@ class DatabaseManager:
     async def get_grouped_cards_by_country(self, country_code: str) -> List[Dict[str, Any]]:
         """Get available cards grouped by type and price for a specific country"""
         try:
-            pipeline = [
-                {
-                    "$match": {
-                        "country_code": country_code,
-                        "is_available": True,
-                        "is_deleted": {"$ne": True}
-                    }
-                },
-                {
-                    "$group": {
-                        "_id": {
-                            "card_type": "$card_type",
-                            "price": "$price",
-                            "value": "$value",
-                            "country_code": "$country_code",
-                            "country_name": "$country_name"
-                        },
-                        "count": {"$sum": 1},
-                        "card_ids": {"$push": "$card_id"}  # Keep track of individual card IDs
-                    }
-                },
-                {
-                    "$project": {
-                        "_id": 0,
-                        "card_type": "$_id.card_type",
-                        "price": "$_id.price",
-                        "value": "$_id.value",
-                        "country_code": "$_id.country_code",
-                        "country_name": "$_id.country_name",
-                        "count": 1,
-                        "card_ids": 1
-                    }
-                },
-                {
-                    "$sort": {"price": 1, "card_type": 1}  # Sort by price then by type
-                }
-            ]
+            # With the new system, we just need to find cards with available count > 0
+            cards = await self.cards.find({
+                "country_code": country_code,
+                "is_available": True,
+                "number_of_available_cards": {"$gt": 0},
+                "is_deleted": {"$ne": True}
+            }).sort([("price", 1), ("card_type", 1)]).to_list(length=None)
             
-            cursor = self.cards.aggregate(pipeline)
-            grouped_cards = await cursor.to_list(length=None)
+            # Transform to match expected format
+            grouped_cards = []
+            for card in cards:
+                grouped_cards.append({
+                    "card_type": card["card_type"],
+                    "price": card["price"],
+                    "value": card.get("value", card["price"]),
+                    "country_code": card["country_code"],
+                    "country_name": card["country_name"],
+                    "count": card["number_of_available_cards"],
+                    "card_id": card["card_id"]  # Include card_id for direct access
+                })
+            
             return grouped_cards
         except Exception as e:
             logger.error(f"Error getting grouped cards for country {country_code}: {e}")
@@ -292,6 +318,7 @@ class DatabaseManager:
                 "card_type": card_type,
                 "price": price,
                 "is_available": True,
+                "number_of_available_cards": {"$gt": 0},
                 "is_deleted": {"$ne": True}
             })
             return card
@@ -300,61 +327,47 @@ class DatabaseManager:
             return None
     
     async def get_grouped_cards_for_deletion(self) -> List[Dict[str, Any]]:
-        """Get all available cards grouped by type, country, and price for deletion"""
+        """Get all available cards for deletion"""
         try:
-            pipeline = [
-                {
-                    "$match": {
-                        "is_available": True,
-                        "is_deleted": {"$ne": True}
-                    }
-                },
-                {
-                    "$group": {
-                        "_id": {
-                            "card_type": "$card_type",
-                            "price": "$price",
-                            "country_code": "$country_code",
-                            "country_name": "$country_name"
-                        },
-                        "count": {"$sum": 1},
-                        "card_ids": {"$push": "$card_id"}  # Keep track of individual card IDs
-                    }
-                },
-                {
-                    "$project": {
-                        "_id": 0,
-                        "card_type": "$_id.card_type",
-                        "price": "$_id.price",
-                        "country_code": "$_id.country_code",
-                        "country_name": "$_id.country_name",
-                        "count": 1,
-                        "card_ids": 1
-                    }
-                },
-                {
-                    "$sort": {"country_code": 1, "price": 1, "card_type": 1}  # Sort by country, price, then type
-                }
-            ]
+            # With the new system, we just need to find cards that exist and are not deleted
+            cards = await self.cards.find({
+                "is_deleted": {"$ne": True}
+            }).sort([("country_code", 1), ("price", 1), ("card_type", 1)]).to_list(length=None)
             
-            cursor = self.cards.aggregate(pipeline)
-            grouped_cards = await cursor.to_list(length=None)
+            # Transform to match expected format
+            grouped_cards = []
+            for card in cards:
+                grouped_cards.append({
+                    "card_type": card["card_type"],
+                    "price": card["price"],
+                    "country_code": card["country_code"],
+                    "country_name": card["country_name"],
+                    "count": card.get("number_of_available_cards", 0),
+                    "card_id": card["card_id"]
+                })
+            
             return grouped_cards
         except Exception as e:
             logger.error(f"Error getting grouped cards for deletion: {e}")
             return []
     
     async def bulk_delete_cards_by_group(self, country_code: str, card_type: str, price: float) -> int:
-        """Bulk delete all cards in a specific group (country + type + price)"""
+        """Delete card by setting it as deleted (soft delete)"""
         try:
-            result = await self.cards.update_many(
-                {
-                    "country_code": country_code,
-                    "card_type": card_type,
-                    "price": price,
-                    "is_available": True,
-                    "is_deleted": {"$ne": True}
-                },
+            # Find the specific card
+            card = await self.cards.find_one({
+                "country_code": country_code,
+                "card_type": card_type,
+                "price": price,
+                "is_deleted": {"$ne": True}
+            })
+            
+            if not card:
+                return 0
+            
+            # Soft delete the card
+            result = await self.cards.update_one(
+                {"card_id": card["card_id"]},
                 {
                     "$set": {
                         "is_deleted": True,
@@ -364,10 +377,11 @@ class DatabaseManager:
                 }
             )
             
-            logger.info(f"Bulk deleted {result.modified_count} cards from group: {card_type} - {country_code} (${price})")
-            return result.modified_count
+            deleted_count = card.get("number_of_available_cards", 0) if result.modified_count > 0 else 0
+            logger.info(f"Deleted card: {card_type} - {country_code} (${price}) with {deleted_count} available units")
+            return deleted_count
         except Exception as e:
-            logger.error(f"Error bulk deleting cards from group {card_type} - {country_code} (${price}): {e}")
+            logger.error(f"Error deleting card {card_type} - {country_code} (${price}): {e}")
             return 0
     
     # Orders operations

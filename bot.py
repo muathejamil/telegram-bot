@@ -222,15 +222,15 @@ Itunes gift card (بطاقة إيتونس)
     # Handle country selection
     elif query.data.startswith('country_'):
         country_code = query.data.split('_')[1]
-        grouped_cards = await db_manager.get_grouped_cards_by_country(country_code)
+        cards = await db_manager.get_cards_by_country(country_code)
         
-        if grouped_cards:
+        if cards:
             keyboard = []
-            for card_group in grouped_cards:
-                # Format: "Visa 20.0 ب USDT (5)"
-                card_text = f"{card_group['card_type']} {card_group['price']} USDT ({card_group['count']})"
-                # Use card_group format for callback data: cardgroup_countrycode_cardtype_price
-                callback_data = f"cardgroup_{country_code}_{card_group['card_type'].replace(' ', '_')}_{card_group['price']}"
+            for card in cards:
+                # Format: "Visa 20.0 USDT (5)"
+                card_text = f"{card['card_type']} {card['price']} USDT ({card['number_of_available_cards']})"
+                # Use direct card_id for callback data
+                callback_data = f"card_{card['card_id']}"
                 keyboard.append([InlineKeyboardButton(
                     card_text,
                     callback_data=callback_data
@@ -259,69 +259,8 @@ Itunes gift card (بطاقة إيتونس)
                 reply_markup=reply_markup
             )
     
-    # Handle card group selection (new grouped display)
-    elif query.data.startswith('cardgroup_'):
-        # Parse callback data: cardgroup_countrycode_cardtype_price
-        parts = query.data.split('_')
-        country_code = parts[1]
-        card_type = parts[2].replace('_', ' ')  # Convert back from underscore format
-        price = float(parts[3])
-        
-        # Get one available card from this group
-        card = await db_manager.get_available_card_from_group(country_code, card_type, price)
-        
-        if card and card.get('is_available', False):
-            # Check user balance
-            user_balance = await db_manager.get_user_balance(user.id)
-            
-            if user_balance >= card['price']:
-                keyboard = [
-                    [InlineKeyboardButton("✅ نعم، أريد الشراء", callback_data=f"confirm_{card['card_id']}")],
-                    [InlineKeyboardButton("❌ لا، إلغاء", callback_data=f"country_{card['country_code']}")],
-                    [InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data='start')]
-                ]
-                reply_markup = InlineKeyboardMarkup(keyboard)
-                
-                confirmation_text = f"""🛒 تأكيد الطلب
-
-📋 تفاصيل البطاقة:
-🏷️ النوع: {card['card_type']}
-🌍 الدولة: {card.get('country_name', 'غير محدد')}
-💰 السعر: {card['price']} USDT
-💳 رصيدك الحالي: {user_balance:.2f} USDT
-
-❓ هل أنت متأكد من أنك تريد شراء هذه البطاقة؟"""
-                
-                await query.edit_message_text(text=confirmation_text, reply_markup=reply_markup)
-            else:
-                keyboard = [
-                    [InlineKeyboardButton("💸 إيداع USDT", callback_data='depositusdt')],
-                    [InlineKeyboardButton("🔙 العودة للبطاقات", callback_data=f"country_{card['country_code']}")],
-                    [InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data='start')]
-                ]
-                reply_markup = InlineKeyboardMarkup(keyboard)
-                
-                insufficient_text = f"""⚠️ رصيد غير كافي
-
-💰 سعر البطاقة: {card['price']} USDT
-💳 رصيدك الحالي: {user_balance:.2f} USDT
-📉 تحتاج إلى: {card['price'] - user_balance:.2f} USDT إضافية
-
-يرجى إيداع المبلغ المطلوب أولاً."""
-                
-                await query.edit_message_text(text=insufficient_text, reply_markup=reply_markup)
-        else:
-            keyboard = [
-                [InlineKeyboardButton("🔙 العودة لقائمة الدول", callback_data='cardlist')],
-                [InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data='start')]
-            ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            await query.edit_message_text(
-                text="😔 لا توجد بطاقات متاحة من هذا النوع حالياً",
-                reply_markup=reply_markup
-            )
     
-    # Handle card selection (legacy - for individual card selection)
+    # Handle card selection
     elif query.data.startswith('card_'):
         logger.info(f"data: {query.data}")
         # Remove 'card_' prefix to get the full card_id
