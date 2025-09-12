@@ -299,6 +299,77 @@ class DatabaseManager:
             logger.error(f"Error getting available card from group {card_type} {price}: {e}")
             return None
     
+    async def get_grouped_cards_for_deletion(self) -> List[Dict[str, Any]]:
+        """Get all available cards grouped by type, country, and price for deletion"""
+        try:
+            pipeline = [
+                {
+                    "$match": {
+                        "is_available": True,
+                        "is_deleted": {"$ne": True}
+                    }
+                },
+                {
+                    "$group": {
+                        "_id": {
+                            "card_type": "$card_type",
+                            "price": "$price",
+                            "country_code": "$country_code",
+                            "country_name": "$country_name"
+                        },
+                        "count": {"$sum": 1},
+                        "card_ids": {"$push": "$card_id"}  # Keep track of individual card IDs
+                    }
+                },
+                {
+                    "$project": {
+                        "_id": 0,
+                        "card_type": "$_id.card_type",
+                        "price": "$_id.price",
+                        "country_code": "$_id.country_code",
+                        "country_name": "$_id.country_name",
+                        "count": 1,
+                        "card_ids": 1
+                    }
+                },
+                {
+                    "$sort": {"country_code": 1, "price": 1, "card_type": 1}  # Sort by country, price, then type
+                }
+            ]
+            
+            cursor = self.cards.aggregate(pipeline)
+            grouped_cards = await cursor.to_list(length=None)
+            return grouped_cards
+        except Exception as e:
+            logger.error(f"Error getting grouped cards for deletion: {e}")
+            return []
+    
+    async def bulk_delete_cards_by_group(self, country_code: str, card_type: str, price: float) -> int:
+        """Bulk delete all cards in a specific group (country + type + price)"""
+        try:
+            result = await self.cards.update_many(
+                {
+                    "country_code": country_code,
+                    "card_type": card_type,
+                    "price": price,
+                    "is_available": True,
+                    "is_deleted": {"$ne": True}
+                },
+                {
+                    "$set": {
+                        "is_deleted": True,
+                        "is_available": False,
+                        "deleted_at": datetime.now(UTC)
+                    }
+                }
+            )
+            
+            logger.info(f"Bulk deleted {result.modified_count} cards from group: {card_type} - {country_code} (${price})")
+            return result.modified_count
+        except Exception as e:
+            logger.error(f"Error bulk deleting cards from group {card_type} - {country_code} (${price}): {e}")
+            return 0
+    
     # Orders operations
     async def create_order(self, user_id: int, card_id: str, country_code: str, amount: float) -> Optional[str]:
         """Create a new order"""

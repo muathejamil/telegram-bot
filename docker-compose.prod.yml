@@ -1,0 +1,62 @@
+services:
+  mongodb:
+    image: mongo:7.0
+    container_name: telegram-bot-mongodb
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: password123
+      MONGO_INITDB_DATABASE: telegram_bot
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+      - ./init-mongo.js:/docker-entrypoint-initdb.d/init-mongo.js:ro
+    networks:
+      - telegram-bot-network
+
+  telegram-bot:
+    image: 135222871115.dkr.ecr.eu-north-1.amazonaws.com/telegram/bot:latest
+    container_name: telegram-bot-app
+    restart: unless-stopped
+    depends_on:
+      - mongodb
+    environment:
+      - MONGODB_URL=mongodb://admin:password123@mongodb:27017/telegram_bot?authSource=admin
+      - BOT_TOKEN=${BOT_TOKEN}
+      - ADMIN_USER_ID=${ADMIN_USER_ID}
+      - BINANCE_WALLET_TOKEN=${BINANCE_WALLET_TOKEN}
+      - BINANCE_WALLET_ID=${BINANCE_WALLET_ID}
+      - USE_WEBHOOKS=${USE_WEBHOOKS:-false}
+      - WEBHOOK_URL=${WEBHOOK_URL}
+      - WEBHOOK_PORT=${WEBHOOK_PORT:-8443}
+    ports:
+      - "${WEBHOOK_PORT:-8443}:${WEBHOOK_PORT:-8443}"
+    networks:
+      - telegram-bot-network
+
+  order-bot:
+    image: 135222871115.dkr.ecr.eu-north-1.amazonaws.com/telegram/order-bot:latest
+    container_name: telegram-order-bot-app
+    restart: unless-stopped
+    depends_on:
+      - mongodb
+    environment:
+      - MONGODB_URL=mongodb://admin:password123@mongodb:27017/telegram_bot?authSource=admin
+      - ORDER_BOT_TOKEN=${ORDER_BOT_TOKEN}
+      - ADMIN_USER_ID=${ADMIN_USER_ID}
+      - USE_WEBHOOKS=${USE_WEBHOOKS:-false}
+      - ORDER_WEBHOOK_URL=${ORDER_WEBHOOK_URL}
+      - ORDER_WEBHOOK_PORT=${ORDER_WEBHOOK_PORT:-8444}
+    ports:
+      - "${ORDER_WEBHOOK_PORT:-8444}:${ORDER_WEBHOOK_PORT:-8444}"
+    command: python order_bot.py
+    networks:
+      - telegram-bot-network
+
+volumes:
+  mongodb_data:
+
+networks:
+  telegram-bot-network:
+    driver: bridge

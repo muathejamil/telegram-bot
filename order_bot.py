@@ -445,16 +445,23 @@ async def order_button_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             await safe_edit_message(query, "❌ لا توجد بطاقات للتعديل", reply_markup)
     
     elif query.data == 'remove_cards':
-        # Show cards for removal
-        cards = await get_all_cards_for_admin()
-        if cards:
+        # Show grouped cards for removal
+        grouped_cards = await db_manager.get_grouped_cards_for_deletion()
+        if grouped_cards:
             keyboard = []
-            for card in cards[:20]:  # Limit to 20 cards
-                status_icon = "✅" if card['is_available'] else "❌"
-                card_text = f"{status_icon} {card['card_type']} - {card['country_code']} (${card['price']})"
+            for card_group in grouped_cards:
+                # Get country flag
+                country_info = COUNTRIES.get(card_group['country_code'], {})
+                flag = country_info.get('flag', '🌍')
+                
+                # Format: "Visa - IL ($20.0) (5) ❌"
+                card_text = f"{card_group['card_type']} - {flag} {card_group['country_code']} (${card_group['price']}) ({card_group['count']}) ❌"
+                
+                # Use callback data format: remove_group_countrycode_cardtype_price
+                callback_data = f"remove_group_{card_group['country_code']}_{card_group['card_type'].replace(' ', '_')}_{card_group['price']}"
                 keyboard.append([InlineKeyboardButton(
                     card_text,
-                    callback_data=f"remove_card_{card['card_id']}"
+                    callback_data=callback_data
                 )])
             
             keyboard.append([InlineKeyboardButton("🔙 العودة لإدارة البطاقات", callback_data='manage_cards')])
@@ -462,7 +469,7 @@ async def order_button_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             
             await safe_edit_message(
                 query,
-                "🗑️ حذف البطاقات\n\n⚠️ تحذير: سيتم حذف البطاقة نهائياً!\nاختر البطاقة التي تريد حذفها:",
+                "🗑️ حذف البطاقات\n\n⚠️ تحذير: سيتم حذف جميع البطاقات في المجموعة نهائياً!\nاختر المجموعة التي تريد حذفها:",
                 reply_markup
             )
         else:
@@ -1170,6 +1177,79 @@ async def order_button_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             keyboard = [[InlineKeyboardButton("🔙 العودة لقائمة الحذف", callback_data='remove_cards')]]
             reply_markup = InlineKeyboardMarkup(keyboard)
             await safe_edit_message(query, "❌ فشل في حذف البطاقة", reply_markup)
+    
+    elif query.data.startswith('remove_group_'):
+        # Parse callback data: remove_group_countrycode_cardtype_price
+        parts = query.data.split('_', 3)  # Split into max 4 parts
+        if len(parts) >= 4:
+            country_code = parts[2]
+            card_type = parts[3].rsplit('_', 1)[0].replace('_', ' ')  # Get card type, convert back from underscore format
+            price = float(parts[3].rsplit('_', 1)[1])  # Get price from the last part
+            
+            # Get country info for display
+            country_info = COUNTRIES.get(country_code, {})
+            flag = country_info.get('flag', '🌍')
+            country_name = country_info.get('name', country_code)
+            
+            # Get the count of cards in this group
+            grouped_cards = await db_manager.get_grouped_cards_for_deletion()
+            card_count = 0
+            for group in grouped_cards:
+                if (group['country_code'] == country_code and 
+                    group['card_type'] == card_type and 
+                    group['price'] == price):
+                    card_count = group['count']
+                    break
+            
+            keyboard = [
+                [InlineKeyboardButton("✅ نعم، احذف جميع البطاقات", callback_data=f"confirm_remove_group_{country_code}_{card_type.replace(' ', '_')}_{price}")],
+                [InlineKeyboardButton("❌ إلغاء", callback_data='remove_cards')]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            confirmation_text = f"""
+⚠️ تأكيد حذف المجموعة
+
+هل أنت متأكد من حذف جميع البطاقات في هذه المجموعة؟
+
+🏷️ النوع: {card_type}
+🌍 الدولة: {flag} {country_name}
+💰 السعر: ${price}
+📊 عدد البطاقات: {card_count}
+
+⚠️ تحذير: سيتم حذف {card_count} بطاقة نهائياً!
+هذا الإجراء لا يمكن التراجع عنه!
+            """
+            
+            await safe_edit_message(query, confirmation_text, reply_markup)
+        else:
+            keyboard = [[InlineKeyboardButton("🔙 العودة لقائمة الحذف", callback_data='remove_cards')]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await safe_edit_message(query, "❌ خطأ في معرف المجموعة", reply_markup)
+    
+    elif query.data.startswith('confirm_remove_group_'):
+        # Parse callback data: confirm_remove_group_countrycode_cardtype_price
+        parts = query.data.split('_', 4)  # Split into max 5 parts
+        if len(parts) >= 5:
+            country_code = parts[3]
+            card_type = parts[4].rsplit('_', 1)[0].replace('_', ' ')  # Get card type, convert back from underscore format
+            price = float(parts[4].rsplit('_', 1)[1])  # Get price from the last part
+            
+            # Perform bulk deletion
+            deleted_count = await db_manager.bulk_delete_cards_by_group(country_code, card_type, price)
+            
+            if deleted_count > 0:
+                keyboard = [[InlineKeyboardButton("🔙 العودة لإدارة البطاقات", callback_data='manage_cards')]]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                await safe_edit_message(query, f"✅ تم حذف {deleted_count} بطاقة بنجاح!", reply_markup)
+            else:
+                keyboard = [[InlineKeyboardButton("🔙 العودة لقائمة الحذف", callback_data='remove_cards')]]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                await safe_edit_message(query, "❌ فشل في حذف البطاقات", reply_markup)
+        else:
+            keyboard = [[InlineKeyboardButton("🔙 العودة لقائمة الحذف", callback_data='remove_cards')]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await safe_edit_message(query, "❌ خطأ في معرف المجموعة", reply_markup)
     
     elif query.data.startswith('restore_card_'):
         card_id = query.data[13:]  # Remove 'restore_card_' prefix
