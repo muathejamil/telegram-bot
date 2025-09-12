@@ -19,6 +19,21 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 # Countries are now managed dynamically through the admin interface
 # All country data is stored in the MongoDB countries collection
 
+async def get_country_info(country_code: str) -> dict:
+    """Get country information from database with fallback to default values"""
+    try:
+        country = await db_manager.get_country_by_code(country_code)
+        if country:
+            return {
+                'flag': country.get('flag', '🌍'),
+                'name': country.get('name', country_code)
+            }
+    except Exception as e:
+        logger.error(f"Error getting country info for {country_code}: {e}")
+    
+    # Fallback to default values
+    return {'flag': '🌍', 'name': country_code}
+
 
 async def safe_edit_message(query, text, reply_markup=None, fallback_answer="تم التحديث ✅"):
     """Safely edit a message, handling BadRequest errors for identical content"""
@@ -228,7 +243,7 @@ async def order_button_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             
             # Card details
             if card_info:
-                country_info = COUNTRIES.get(card_info['country_code'], {})
+                country_info = await get_country_info(card_info['country_code'])
                 flag = country_info.get('flag', '🌍')
                 card_details = f"{card_info['card_type']} - {flag} {card_info['country_name']}"
                 card_price = f"${card_info['price']}"
@@ -439,7 +454,7 @@ async def order_button_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             keyboard = []
             for card_group in grouped_cards:
                 # Get country flag
-                country_info = COUNTRIES.get(card_group['country_code'], {})
+                country_info = await get_country_info(card_group['country_code'])
                 flag = country_info.get('flag', '🌍')
                 
                 # Format: "Visa - IL ($20.0) (5) ❌"
@@ -471,7 +486,7 @@ async def order_button_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         if deleted_cards:
             cards_text = "🗂️ البطاقات المحذوفة:\n\n"
             for i, card in enumerate(deleted_cards[:15], 1):  # Limit to 15 cards
-                country_info = COUNTRIES.get(card['country_code'], {})
+                country_info = await get_country_info(card['country_code'])
                 flag = country_info.get('flag', '🌍')
                 deleted_at = card.get('deleted_at', 'غير محدد')
                 if isinstance(deleted_at, datetime):
@@ -498,7 +513,7 @@ async def order_button_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         if deleted_cards:
             keyboard = []
             for card in deleted_cards[:20]:  # Limit to 20 cards
-                country_info = COUNTRIES.get(card['country_code'], {})
+                country_info = await get_country_info(card['country_code'])
                 flag = country_info.get('flag', '🌍')
                 card_text = f"♻️ {card['card_type']} - {flag} {card['country_code']} (${card['price']})"
                 keyboard.append([InlineKeyboardButton(
@@ -1326,7 +1341,7 @@ async def order_button_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             
             available_count = card.get('number_of_available_cards', 0)
             status = f"متاحة ({available_count})" if card['is_available'] and available_count > 0 else "غير متاحة"
-            country_info = COUNTRIES.get(card['country_code'], {})
+            country_info = await get_country_info(card['country_code'])
             flag = country_info.get('flag', '🌍')
             
             card_details = f"""
@@ -1360,7 +1375,7 @@ async def order_button_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
             
-            country_info = COUNTRIES.get(card['country_code'], {})
+            country_info = await get_country_info(card['country_code'])
             flag = country_info.get('flag', '🌍')
             
             confirmation_text = f"""
@@ -1418,7 +1433,7 @@ async def order_button_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             price = float(parts[3].rsplit('_', 1)[1])  # Get price from the last part
             
             # Get country info for display
-            country_info = COUNTRIES.get(country_code, {})
+            country_info = await get_country_info(country_code)
             flag = country_info.get('flag', '🌍')
             country_name = country_info.get('name', country_code)
             
@@ -1719,7 +1734,7 @@ async def handle_card_addition_text(update: Update, context: ContextTypes.DEFAUL
                     keyboard = [[InlineKeyboardButton("🔙 العودة لإدارة البطاقات", callback_data='manage_cards')]]
                     reply_markup = InlineKeyboardMarkup(keyboard)
                     
-                    country_info = COUNTRIES.get(card_base_data['country_code'], {})
+                    country_info = await get_country_info(card_base_data['country_code'])
                     flag = country_info.get('flag', '🌍')
                     
                     success_text = f"""
