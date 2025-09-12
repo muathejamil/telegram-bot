@@ -4,7 +4,7 @@ import asyncio
 import base64
 import io
 from datetime import datetime, UTC
-from telegram import ForceReply, Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import ForceReply, Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters, CallbackQueryHandler
 from dotenv import load_dotenv
 from database import db_manager
@@ -728,19 +728,20 @@ async def handle_card_image_delivery(application, notification):
             await db_manager.mark_notification_processed(notification['notification_id'])
 
 
-async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Echo the user message."""
-    await update.message.reply_text(update.message.text)
 
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Displays info on how to use the bot."""
-    await update.message.reply_text("Use /start to test this bot.")
 
 async def startup_database(application):
     """Initialize database connection and start notification processor"""
     try:
         await db_manager.connect()
         logging.info("Database connected successfully")
+        
+        # Set bot commands to only show /start in the menu
+        commands = [
+            BotCommand("start", "بدء استخدام البوت")
+        ]
+        await application.bot.set_my_commands(commands)
+        logging.info("Bot commands set successfully")
         
         # Start the notification processor for card deliveries
         asyncio.create_task(process_card_delivery_notifications(application))
@@ -860,9 +861,7 @@ def main() -> None:
     
     # Add command and message handlers
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CallbackQueryHandler(button_handler))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, echo))
 
     # Get webhook configuration
     WEBHOOK_URL = os.getenv('WEBHOOK_URL')
